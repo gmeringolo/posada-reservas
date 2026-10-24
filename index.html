@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Posada reservas</title>
+  <meta name="theme-color" content="#F3F4F1" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#121614" media="(prefers-color-scheme: dark)">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Posada reservas">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon-180.png">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Atkinson+Hyperlegible:wght@400;700&display=swap">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <!-- Pantalla de ingreso -->
+  <section class="login" id="login" hidden>
+    <div class="login-card">
+      <img class="login-logo" src="icon.svg" alt="" width="72" height="72">
+      <h1>Posada reservas</h1>
+      <p>Ingresá una sola vez y vas a quedar conectada en este celular.</p>
+      <form id="loginForm" novalidate>
+        <div class="fld"><label for="loginUser">Usuario</label><input id="loginUser" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" required></div>
+        <div class="fld"><label for="loginPass">Contraseña</label><input id="loginPass" type="password" inputmode="numeric" autocomplete="current-password" required></div>
+        <div class="err" id="loginErr" hidden></div>
+        <button class="btn primary" type="submit" id="loginBtn">Ingresar</button>
+      </form>
+    </div>
+  </section>
+
+  <!-- App -->
+  <main id="app" hidden>
+    <header class="top">
+      <button class="iconbtn" id="prev" aria-label="Mes anterior"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M15 5l-7 7 7 7"/></svg></button>
+      <div class="month"><div class="brand"><img src="icon.svg" alt="" width="16" height="16">Posada reservas</div><h1 id="monthTitle" class="num">—</h1></div>
+      <button class="todaybtn" id="todayBtn">Hoy</button>
+      <button class="iconbtn" id="next" aria-label="Mes siguiente"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M9 5l7 7-7 7"/></svg></button>
+    </header>
+
+    <p class="status" id="status"><span class="dot"></span><span id="statusText">Conectando…</span></p>
+
+    <div class="tl-wrap">
+      <div class="tl-scroll" id="scroller"><div class="tl" id="tl"></div></div>
+    </div>
+    <p class="hint">Tocá un día libre para cargar una reserva en esa casa, o una barra para ver el detalle.</p>
+
+    <div class="summary" id="summary"></div>
+
+    <h2 id="listTitle">Reservas del mes</h2>
+    <div class="list" id="list"></div>
+
+    <div class="foot" id="foot" hidden>
+      <span id="whoami"></span>
+      <button class="linkbtn" id="logout" type="button">Salir</button>
+    </div>
+
+    <button class="fab" id="fab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Nueva reserva</button>
+  </main>
+
+  <div class="overlay" id="overlay" hidden></div>
+  <div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle" hidden></div>
+  <div class="toast" id="toast" role="status" hidden></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

@@ -91,7 +91,7 @@ h2{font-family:var(--f-display);font-weight:700;font-size:19px;margin:26px 0 10p
 .foot{margin-top:28px;display:flex;justify-content:space-between;align-items:center;gap:12px;font-size:13px;color:var(--muted)}
 .linkbtn{border:0;background:none;color:var(--accent);font-weight:700;padding:6px 0}
 
-.fab{position:fixed;right:calc(16px + env(safe-area-inset-right,0px));bottom:calc(18px + env(safe-area-inset-bottom,0px));z-index:6;
+.fab{position:fixed;left:calc(16px + env(safe-area-inset-left,0px));bottom:calc(18px + env(safe-area-inset-bottom,0px));z-index:6;
   height:54px;padding:0 20px 0 16px;border-radius:16px;border:0;background:var(--accent);color:var(--accent-ink);
   font-weight:700;font-size:16px;display:flex;align-items:center;gap:8px;box-shadow:0 6px 18px rgba(0,0,0,.18)}
 .fab svg{width:20px;height:20px}
@@ -99,7 +99,7 @@ h2{font-family:var(--f-display);font-weight:700;font-size:19px;margin:26px 0 10p
 /* Hoja inferior */
 .overlay{position:fixed;inset:0;background:var(--overlay);z-index:20}
 .sheet{position:fixed;left:0;right:0;bottom:0;z-index:21;background:var(--surface);border-radius:20px 20px 0 0;
-  max-height:92%;overflow-y:auto;padding-top:8px;padding-bottom:calc(20px + env(safe-area-inset-bottom,0px));
+  max-height:92%;overflow-y:auto;padding-top:8px;padding-bottom:calc(96px + env(safe-area-inset-bottom,0px));
   padding-left:max(18px, env(safe-area-inset-left,0px));padding-right:max(18px, env(safe-area-inset-right,0px));
   max-width:560px;margin:0 auto;animation:up .22s ease-out}
 @keyframes up{from{transform:translateY(24px);opacity:.6}to{transform:none;opacity:1}}
@@ -139,7 +139,7 @@ form{display:flex;flex-direction:column;gap:14px}
 .tag{display:inline-flex;align-items:center;gap:6px}
 .links{display:flex;gap:8px;margin-bottom:12px}
 .links a,.links button{flex:1;display:flex;align-items:center;justify-content:center;gap:6px;height:44px;border-radius:12px;border:1px solid var(--line);background:var(--bg);text-decoration:none;color:var(--ink);font-weight:700;font-size:14px}
-.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(86px + env(safe-area-inset-bottom,0px));z-index:30;background:var(--ink);color:var(--bg);
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(100px + env(safe-area-inset-bottom,0px));z-index:30;background:var(--ink);color:var(--bg);
   padding:10px 16px;border-radius:12px;font-size:14px;font-weight:700;max-width:calc(100% - 32px)}
 
 /* Ingreso */
@@ -148,6 +148,12 @@ form{display:flex;flex-direction:column;gap:14px}
 .login-card h1{font-family:var(--f-display);font-size:26px;margin:0 0 4px}
 .login-card p{margin:0 0 18px;color:var(--muted);font-size:14px}
 .login-logo{display:block;width:72px;height:72px;border-radius:18px;margin-bottom:16px}
+.password-control{position:relative}
+.password-control input{padding-right:54px}
+.password-toggle{position:absolute;right:6px;top:50%;transform:translateY(-50%);width:40px;height:40px;border:0;border-radius:9px;background:transparent;color:var(--muted);display:grid;place-items:center}
+.password-toggle svg{width:20px;height:20px}
+.password-toggle .eye-closed,.password-toggle[aria-pressed="true"] .eye-open{display:none}
+.password-toggle[aria-pressed="true"] .eye-closed{display:block}
 
 @media (min-width:720px){
   body{max-width:1100px;margin:0 auto}

@@ -29,7 +29,7 @@ Si abrís `index.html` sin completar `config.js`, la app funciona en **modo prue
 1. Entrá a <https://supabase.com> y creá una cuenta. Podés usar tu cuenta de GitHub.
 2. Tocá **New project** y completá:
    - **Name:** `posada-reservas`.
-   - **Database password:** generá una y guardala. La app no la usa, pero te puede servir más adelante. BV4&g2m#?u4WU+/
+   - **Database password:** generá una contraseña segura y guardala. La app no la usa.
    - **Region:** *South America (São Paulo)*, que es la más cercana a Uruguay.
 3. Esperá 1 o 2 minutos a que el proyecto termine de crearse.
 4. En el menú de la izquierda, entrá a **SQL Editor** y tocá **New query**.
@@ -43,7 +43,7 @@ Supabase pide un email para cada usuario. Por eso el usuario **Posada** se guard
 1. En el menú de la izquierda, entrá a **Authentication** → **Users** → **Add user** → **Create new user**.
 2. Completá los datos:
    - **Email:** `posada@example.com`
-   - **Password:** `16161616`
+   - **Password:** elegí una contraseña segura y única.
    - Marcá **Auto Confirm User**.
 3. Tocá **Create user**.
 4. Entrá a **Authentication** → **Sign In / Providers** (o **Providers → Email**, según la versión del panel) y desactivá **Allow new users to sign up**. Así nadie más puede crearse una cuenta.
@@ -106,7 +106,7 @@ A partir de acá, cada cambio que subas a GitHub se publica automáticamente.
 
 ## Paso 4 · Usarla en los celulares
 
-1. Abrí el link en el celular e ingresá con el usuario **Posada** y la contraseña **16161616**. Solo hace falta hacerlo una vez por celular.
+1. Abrí el link en el celular e ingresá con el usuario **Posada** y la contraseña que definiste en Supabase. Solo hace falta hacerlo una vez por celular.
 2. Agregala a la pantalla de inicio:
    - **iPhone (Safari):** botón Compartir → *Agregar a inicio*.
    - **Android (Chrome):** menú ⋮ → *Agregar a pantalla principal* o *Instalar app*.
@@ -130,7 +130,7 @@ A partir de acá, cada cambio que subas a GitHub se publica automáticamente.
 | "Modo prueba: falta completar config.js" | `config.js` todavía tiene `PEGAR_AQUI…` |
 | "No se pudieron cargar las reservas: …" | La URL o la clave están mal copiadas, o no ejecutaste `supabase.sql` |
 | "El usuario o la contraseña no coinciden" | Revisá que el email del usuario en Supabase sea exactamente `posada@example.com` y que esté confirmado |
-| "No tenés permiso para guardar" | La sesión venció: tocá **Salir** y volvé a ingresar |
+| "Supabase rechazó el guardado por permisos" | Ejecutá de nuevo el archivo `supabase.sql` en Supabase para aplicar los permisos de la tabla. Si el mensaje indica que la sesión venció, tocá **Salir** y volvé a ingresar. |
 | Los cambios de la otra persona no aparecen solos | Falta la línea `alter publication supabase_realtime add table public.reservas;`. Mientras tanto, recargar la página los muestra |
 | El proyecto de Supabase aparece pausado | En el plan gratuito, los proyectos se pausan después de 7 días sin uso. Entrá al panel y tocá **Restore** |
 

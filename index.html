@@ -26,7 +26,16 @@
       <p>Ingresá una sola vez y vas a quedar conectada en este celular.</p>
       <form id="loginForm" novalidate>
         <div class="fld"><label for="loginUser">Usuario</label><input id="loginUser" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" required></div>
-        <div class="fld"><label for="loginPass">Contraseña</label><input id="loginPass" type="password" inputmode="numeric" autocomplete="current-password" required></div>
+        <div class="fld">
+          <label for="loginPass">Contraseña</label>
+          <div class="password-control">
+            <input id="loginPass" type="password" autocomplete="current-password" required>
+            <button class="password-toggle" id="togglePassword" type="button" aria-label="Mostrar contraseña" aria-pressed="false" title="Mostrar contraseña">
+              <svg class="eye-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+              <svg class="eye-closed" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 3 18 18M10.6 10.6a2 2 0 0 0 2.8 2.8"/><path d="M9.9 5.2A10.8 10.8 0 0 1 12 5c6.4 0 10 7 10 7a15.8 15.8 0 0 1-3.1 3.9M6.2 6.2C3.5 8 2 12 2 12s3.6 7 10 7c1 0 1.9-.2 2.7-.4"/></svg>
+            </button>
+          </div>
+        </div>
         <div class="err" id="loginErr" hidden></div>
         <button class="btn primary" type="submit" id="loginBtn">Ingresar</button>
       </form>

@@ -272,7 +272,8 @@
   function mensajeError(ex) {
     const code = ex && ex.code;
     if (code === "23P01") return "Otra persona acaba de cargar una reserva en esa casa para esas fechas. Revisá el calendario y elegí otras fechas.";
-    if (code === "42501" || code === "PGRST301") return "No tenés permiso para guardar. Revisá que hayas ingresado con tu usuario.";
+    if (code === "42501") return "Supabase rechazó el guardado por permisos de la base de datos. Hay que actualizar los permisos ejecutando de nuevo el archivo supabase.sql; no significa que hayas ingresado mal.";
+    if (code === "PGRST301") return "La sesión de acceso venció o no es válida. Tocá Salir e ingresá de nuevo.";
     if (code === "23514") return "Algún dato no es válido (fechas, casa o moneda). Revisá el formulario.";
     return "No se pudo guardar. Revisá tu conexión e intentá de nuevo." + (ex?.message ? ` (${ex.message})` : "");
   }
@@ -316,6 +317,14 @@
     });
     $("#list").addEventListener("click", e => { const it = e.target.closest(".item"); if (it) openDetail(it.dataset.id); });
     $("#logout").addEventListener("click", async () => { await sb.auth.signOut(); location.reload(); });
+    $("#togglePassword").addEventListener("click", e => {
+      const button = e.currentTarget;
+      const visible = button.getAttribute("aria-pressed") !== "true";
+      $("#loginPass").type = visible ? "text" : "password";
+      button.setAttribute("aria-pressed", String(visible));
+      button.setAttribute("aria-label", visible ? "Ocultar contraseña" : "Mostrar contraseña");
+      button.title = visible ? "Ocultar contraseña" : "Mostrar contraseña";
+    });
     $("#loginForm").addEventListener("submit", async e => {
       e.preventDefault();
       const btn = $("#loginBtn"), err = $("#loginErr");

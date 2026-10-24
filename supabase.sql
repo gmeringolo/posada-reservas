@@ -33,11 +33,26 @@ create table if not exists public.reservas (
 create index if not exists reservas_inicio_idx on public.reservas (inicio);
 
 -- 3) Actualizaciones en tiempo real (para que el otro celular se entere solo)
-alter publication supabase_realtime add table public.reservas;
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_publication_tables
+    where pubname = 'supabase_realtime'
+      and schemaname = 'public'
+      and tablename = 'reservas'
+  ) then
+    alter publication supabase_realtime add table public.reservas;
+  end if;
+end
+$$;
 
 -- 4) Seguridad (Row Level Security)
 alter table public.reservas enable row level security;
 
+-- Los permisos SQL y las políticas RLS son controles distintos: se necesitan ambos.
+grant usage on schema public to authenticated;
+grant select, insert, update, delete on table public.reservas to authenticated;
 
 -- 5) Permisos: solo el usuario que ingresa con login puede ver y cargar reservas.
 --    Quien abra la web sin ingresar no ve nada (ni nombres ni teléfonos).

@@ -70,6 +70,27 @@
     return { clase: "pay-unpaid", etiqueta: "Sin pagos" };
   };
   const saldoPendiente = r => r.total == null ? null : Math.max(0, Number(r.total) - (Number(r.senia) || 0));
+  const calcularResumenPeriodo = (inicio, fin, lista) => {
+    const desde = dn(inicio), hasta = dn(fin) + 1;
+    const resumen = {
+      UYU: 0,
+      USD: 0,
+      nochesPorCasa: Object.fromEntries(CASAS.map(c => [c.id, 0]))
+    };
+    for (const reserva of lista) {
+      const nochesTotales = noches(reserva);
+      if (nochesTotales <= 0) continue;
+      const nochesEnPeriodo = Math.max(0, Math.min(dn(reserva.fin), hasta) - Math.max(dn(reserva.inicio), desde));
+      if (!nochesEnPeriodo) continue;
+      if (Object.prototype.hasOwnProperty.call(resumen.nochesPorCasa, reserva.casa)) resumen.nochesPorCasa[reserva.casa] += nochesEnPeriodo;
+      if (reserva.total != null && Object.prototype.hasOwnProperty.call(resumen, reserva.moneda)) {
+        resumen[reserva.moneda] += Number(reserva.total) * nochesEnPeriodo / nochesTotales;
+      }
+    }
+    resumen.UYU = Math.round(resumen.UYU * 100) / 100;
+    resumen.USD = Math.round(resumen.USD * 100) / 100;
+    return resumen;
+  };
 
   /* ---------- conversión fila de la base <-> objeto de la app ---------- */
   const fromRow = r => ({
@@ -181,9 +202,9 @@
     openSheet(`
       <h3 id="sheetTitle">${editing ? "Editar reserva" : "Nueva reserva"} ${closeBtn}</h3>
       <form id="form" novalidate>
-        <div class="fld"><span class="lbl">Casa *</span>
-          <div class="casas">${CASAS.map(c => `<label class="casa-opt"><input type="radio" name="casa" id="casa-${c.id}" value="${c.id}" ${r.casa === c.id ? "checked" : ""} required><span><i class="c-${c.id}"></i>${esc(c.nombre)}</span></label>`).join("")}</div>
-        </div>
+      <div class="fld"><span class="lbl">Casa *</span>
+        <div class="casas">${CASAS.map(c => `<label class="casa-opt"><input type="radio" name="casa" id="casa-${c.id}" value="${c.id}" ${r.casa === c.id ? "checked" : ""} required><span><i class="c-${c.id}"></i>${esc(c.nombre)}</span></label>`).join("")}</div>
+      </div>
         <div class="two">
           <div class="fld"><label for="inicio">Entrada *</label><input type="date" id="inicio" value="${esc(r.inicio)}" required></div>
           <div class="fld"><label for="fin">Salida *</label><input type="date" id="fin" value="${esc(r.fin)}" required></div>
@@ -219,7 +240,9 @@
       </form>`);
 
     const f = id => document.getElementById(id);
-    let totalManual = editing && Number(r.total) !== noches(r) * Number(r.precioNoche);
+    let importeFuente = editing && r.total != null && (r.precioNoche == null || Number(r.total) !== noches(r) * Number(r.precioNoche))
+      ? "total"
+      : "precio";
     const actualizarPago = () => {
       const total = f("total").value === "" ? null : Number(f("total").value);
       const senia = f("senia").value === "" ? null : Number(f("senia").value);
@@ -232,16 +255,23 @@
     const recalc = () => {
       const a = f("inicio").value, b = f("fin").value;
       const n = a && b ? dn(b) - dn(a) : 0;
+      if (n > 0) {
+        if (importeFuente === "total" && f("total").value !== "") {
+          f("precio").value = (Number(f("total").value) / n).toFixed(2);
+        } else if (importeFuente === "precio" && f("precio").value !== "") {
+          f("total").value = (Math.round(n * Number(f("precio").value) * 100) / 100).toFixed(2);
+        }
+      }
       f("nightsInfo").textContent = n > 0 ? `${n} ${n === 1 ? "noche" : "noches"}` + (Number(f("precio").value) ? ` × ${money(f("precio").value, f("moneda").value)}` : "") : "";
-      if (!totalManual && n > 0 && f("precio").value !== "") f("total").value = Math.round(n * Number(f("precio").value) * 100) / 100;
       actualizarPago();
     };
     f("inicio").addEventListener("change", () => {
       if (f("inicio").value && (!f("fin").value || f("fin").value <= f("inicio").value)) f("fin").value = fromDn(dn(f("inicio").value) + 1);
       recalc();
     });
-    ["fin", "precio", "moneda"].forEach(id => f(id).addEventListener("input", recalc));
-    f("total").addEventListener("input", () => { totalManual = f("total").value !== ""; actualizarPago(); });
+    ["fin", "moneda"].forEach(id => f(id).addEventListener("input", recalc));
+    f("precio").addEventListener("input", () => { importeFuente = "precio"; recalc(); });
+    f("total").addEventListener("input", () => { importeFuente = "total"; recalc(); });
     f("senia").addEventListener("input", actualizarPago);
     recalc();
 
@@ -287,8 +317,17 @@
     if (d.senia !== null && d.total !== null && d.senia > d.total) return "La seña no puede ser mayor que el total de la estadía.";
     if (!Number.isInteger(d.adultos) || d.adultos < 0) return "Ingresá una cantidad válida de adultos.";
     if (!Number.isInteger(d.ninos) || d.ninos < 0) return "Ingresá una cantidad válida de niños.";
-    const choque = reservas.find(o => o.id !== id && o.casa === d.casa && dn(d.inicio) < dn(o.fin) && dn(d.fin) > dn(o.inicio));
-    if (choque) return `La casa ${esc(casaById[d.casa].nombre)} ya está reservada por <b>${esc([choque.nombre, choque.apellido].filter(Boolean).join(" "))}</b> del ${fmtCorto(choque.inicio)} al ${fmtCorto(choque.fin)}. Cambiá las fechas o la casa.`;
+    const inicio = dn(d.inicio), fin = dn(d.fin);
+    const choque = reservas.find(o => o.id !== id && o.casa === d.casa && inicio < dn(o.fin) && fin > dn(o.inicio));
+    if (choque) {
+      const inicioSolapado = Math.max(inicio, dn(choque.inicio));
+      const finSolapado = Math.min(fin, dn(choque.fin));
+      const nochesSolapadas = finSolapado - inicioSolapado;
+      const desde = fmtCorto(fromDn(inicioSolapado));
+      const hasta = fmtCorto(fromDn(finSolapado - 1));
+      const huesped = [choque.nombre, choque.apellido].filter(Boolean).join(" ");
+      return `No se puede cambiar a ${esc(casaById[d.casa].nombre)}: ya está ocupada por <b>${esc(huesped)}</b> durante ${nochesSolapadas === 1 ? "la noche" : "las noches"} del ${desde}${desde === hasta ? "" : ` al ${hasta}`}. Elegí otra casa o cambiá las fechas.`;
+    }
     return null;
   }
 
@@ -366,7 +405,7 @@
 
   function mensajeError(ex) {
     const code = ex && ex.code;
-    if (code === "23P01") return "Otra persona acaba de cargar una reserva en esa casa para esas fechas. Revisá el calendario y elegí otras fechas.";
+    if (code === "23P01") return "No se pudo guardar porque otra reserva ocupa esas fechas en esa casa. Actualizá el calendario y elegí otra casa o cambiá las fechas.";
     if (code === "42501") return "Supabase rechazó el guardado por permisos de la base de datos. Hay que actualizar los permisos ejecutando de nuevo el archivo supabase.sql; no significa que hayas ingresado mal.";
     if (code === "PGRST301") return "La sesión de acceso venció o no es válida. Tocá Salir e ingresá de nuevo.";
     if (code === "23514") return "Algún dato no es válido (fechas, casa o moneda). Revisá el formulario.";
@@ -398,6 +437,32 @@
 
   /* ---------- eventos ---------- */
   function wire() {
+    $("#reportStart").value = iso(now.getFullYear(), now.getMonth(), 1);
+    $("#reportEnd").value = todayISO;
+    $("#reportStart").max = todayISO;
+    $("#reportEnd").max = todayISO;
+    $("#calculateReport").addEventListener("click", () => {
+      const inicio = $("#reportStart").value;
+      const fin = $("#reportEnd").value;
+      const error = $("#reportErr");
+      error.hidden = true;
+      if (!inicio || !fin) {
+        error.textContent = "Elegí las dos fechas del período.";
+        error.hidden = false;
+        return;
+      }
+      if (inicio > fin) {
+        error.textContent = "La fecha inicial no puede ser posterior a la fecha final.";
+        error.hidden = false;
+        return;
+      }
+      if (fin > todayISO) {
+        error.textContent = "No se pueden calcular montos de fechas futuras.";
+        error.hidden = false;
+        return;
+      }
+      mostrarResumenPeriodo(calcularResumenPeriodo(inicio, fin, reservas));
+    });
     $("#overlay").addEventListener("click", closeSheet);
     $("#sheet").addEventListener("click", e => { if (e.target.closest("[data-close]")) closeSheet(); });
     document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("#sheet").hidden) closeSheet(); });
@@ -438,6 +503,18 @@
       }
       location.reload();
     });
+  }
+
+  function mostrarResumenPeriodo(resumen) {
+    $("#reportResults").innerHTML = `
+      <div class="report-totals">
+        <div class="report-total"><span>Total en pesos uruguayos</span><strong>${money(resumen.UYU, "UYU")}</strong></div>
+        <div class="report-total"><span>Total en dólares</span><strong>${money(resumen.USD, "USD")}</strong></div>
+      </div>
+      <h3>Noches alquiladas por casa</h3>
+      <div class="report-houses">${CASAS.map(c => `
+        <div class="report-house"><span class="swatch c-${c.id}"></span><span>${esc(c.nombre)}</span><strong>${resumen.nochesPorCasa[c.id]} ${resumen.nochesPorCasa[c.id] === 1 ? "noche" : "noches"}</strong></div>
+      `).join("")}</div>`;
   }
 
   function mostrarApp() {

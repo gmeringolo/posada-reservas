@@ -68,6 +68,18 @@
       <button class="linkbtn" id="logout" type="button">Salir</button>
     </div>
 
+    <section class="report" aria-labelledby="reportTitle">
+      <h2 id="reportTitle">Resumen por período</h2>
+      <p class="report-hint">Ingresos estimados según las noches del período. No se pueden consultar fechas futuras.</p>
+      <div class="report-filters">
+        <div class="fld"><label for="reportStart">Desde</label><input id="reportStart" type="date" required></div>
+        <div class="fld"><label for="reportEnd">Hasta</label><input id="reportEnd" type="date" required></div>
+      </div>
+      <button class="btn primary report-button" id="calculateReport" type="button">Calcular resumen</button>
+      <div class="err" id="reportErr" hidden></div>
+      <div id="reportResults" aria-live="polite"></div>
+    </section>
+
     <button class="fab" id="fab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Nueva reserva</button>
   </main>
 

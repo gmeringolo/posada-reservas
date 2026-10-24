@@ -18,9 +18,9 @@ window.CONFIG = {
 
   // Las 4 casas. El id no se puede cambiar después de cargar reservas.
   CASAS: [
-    { id: "roja",    nombre: "Roja" },
-    { id: "azul",    nombre: "Azul" },
     { id: "verde",   nombre: "Verde" },
+    { id: "azul",    nombre: "Azul" },
+    { id: "roja",    nombre: "Roja" },
     { id: "mostaza", nombre: "Mostaza" }
   ]
 };

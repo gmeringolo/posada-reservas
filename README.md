@@ -29,7 +29,7 @@ Si abrís `index.html` sin completar `config.js`, la app funciona en **modo prue
 1. Entrá a <https://supabase.com> y creá una cuenta. Podés usar tu cuenta de GitHub.
 2. Tocá **New project** y completá:
    - **Name:** `posada-reservas`.
-   - **Database password:** generá una y guardala. La app no la usa, pero te puede servir más adelante.
+   - **Database password:** generá una y guardala. La app no la usa, pero te puede servir más adelante. BV4&g2m#?u4WU+/
    - **Region:** *South America (São Paulo)*, que es la más cercana a Uruguay.
 3. Esperá 1 o 2 minutos a que el proyecto termine de crearse.
 4. En el menú de la izquierda, entrá a **SQL Editor** y tocá **New query**.

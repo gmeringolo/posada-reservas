@@ -48,7 +48,8 @@
     const mStart = dn(iso(y, m, 1)), mEnd = mStart + N - 1;
     const tl = $("#tl");
     tl.style.setProperty("--days", N);
-    $("#monthTitle").textContent = utc(iso(y, m, 1)).toLocaleDateString("es-UY", { month: "long", year: "numeric", timeZone: "UTC" });
+    const monthName = utc(iso(y, m, 1)).toLocaleDateString("es-UY", { month: "long", timeZone: "UTC" });
+    $("#monthTitle").textContent = `${monthName} ${y}`;
 
     let html = `<div class="tl-row head"><div class="tl-label">Casa</div><div class="tl-cells">`;
     for (let d = 1; d <= N; d++) {

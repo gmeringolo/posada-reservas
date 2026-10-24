@@ -6,6 +6,19 @@
   const CFG = window.CONFIG || {};
   const CASAS = CFG.CASAS || [];
   const casaById = Object.fromEntries(CASAS.map(c => [c.id, c]));
+  const CODIGOS_PAIS = [
+    { codigo: "+598", pais: "Uruguay" },
+    { codigo: "+54", pais: "Argentina" },
+    { codigo: "+55", pais: "Brasil" },
+    { codigo: "+56", pais: "Chile" },
+    { codigo: "+595", pais: "Paraguay" },
+    { codigo: "+591", pais: "Bolivia" },
+    { codigo: "+51", pais: "Perú" },
+    { codigo: "+57", pais: "Colombia" },
+    { codigo: "+52", pais: "México" },
+    { codigo: "+34", pais: "España" },
+    { codigo: "+1", pais: "Estados Unidos / Canadá" }
+  ];
   const WD = ["D", "L", "M", "M", "J", "V", "S"];
   const CELL = 44;
   const $ = s => document.querySelector(s);
@@ -27,18 +40,54 @@
   const fmtCorto = s => utc(s).toLocaleDateString("es-UY", { day: "numeric", month: "short", timeZone: "UTC" }).replace(".", "");
   const fmtLargo = s => utc(s).toLocaleDateString("es-UY", { weekday: "short", day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
   const money = (v, mon) => (mon === "UYU" ? "$U " : "US$ ") + new Intl.NumberFormat("es-UY", { maximumFractionDigits: 2 }).format(Number(v) || 0);
+  const importe = (v, mon) => v == null ? "Sin registrar" : money(v, mon);
   const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const separarTelefono = telefono => {
+    const digitos = String(telefono || "").replace(/\D/g, "");
+    const pais = [...CODIGOS_PAIS]
+      .sort((a, b) => b.codigo.length - a.codigo.length)
+      .find(opcion => digitos.startsWith(opcion.codigo.slice(1)));
+    return pais
+      ? { codigo: pais.codigo, numero: digitos.slice(pais.codigo.length - 1) }
+      : { codigo: "+598", numero: String(telefono || "") };
+  };
+  const telefonoInternacional = (codigo, numero) => {
+    const prefijo = String(codigo).replace(/\D/g, "");
+    let digitos = String(numero || "").replace(/\D/g, "");
+    if (digitos.startsWith(prefijo)) digitos = digitos.slice(prefijo.length);
+    digitos = digitos.replace(/^0+/, "");
+    return `+${prefijo} ${digitos}`;
+  };
+  const normalizarTelefonoGuardado = telefono => {
+    const partes = separarTelefono(telefono);
+    return telefonoInternacional(partes.codigo, partes.numero);
+  };
+  const estadoPago = r => {
+    const total = r.total == null ? null : Number(r.total);
+    const senia = r.senia == null ? null : Number(r.senia);
+    if (total > 0 && senia !== null && senia >= total) return { clase: "pay-paid", etiqueta: "Pago total" };
+    if (senia > 0) return { clase: "pay-deposit", etiqueta: "Seña paga" };
+    return { clase: "pay-unpaid", etiqueta: "Sin pagos" };
+  };
+  const saldoPendiente = r => r.total == null ? null : Math.max(0, Number(r.total) - (Number(r.senia) || 0));
 
   /* ---------- conversión fila de la base <-> objeto de la app ---------- */
   const fromRow = r => ({
     id: r.id, casa: r.casa, inicio: r.inicio, fin: r.fin,
-    nombre: r.nombre, apellido: r.apellido, telefono: r.telefono,
-    moneda: r.moneda, precioNoche: Number(r.precio_noche), total: Number(r.total)
+    nombre: r.nombre, apellido: r.apellido || "", telefono: r.telefono,
+    moneda: r.moneda,
+    precioNoche: r.precio_noche == null ? null : Number(r.precio_noche),
+    total: r.total == null ? null : Number(r.total),
+    senia: r.senia == null ? null : Number(r.senia),
+    adultos: Number(r.adultos ?? 1),
+    ninos: Number(r.ninos ?? 0),
+    comentarios: r.comentarios || ""
   });
   const toRow = d => ({
     casa: d.casa, inicio: d.inicio, fin: d.fin,
-    nombre: d.nombre, apellido: d.apellido, telefono: d.telefono,
-    moneda: d.moneda, precio_noche: d.precioNoche, total: d.total
+    nombre: d.nombre, apellido: d.apellido || null, telefono: d.telefono,
+    moneda: d.moneda, precio_noche: d.precioNoche, total: d.total, senia: d.senia,
+    adultos: d.adultos, ninos: d.ninos, comentarios: d.comentarios || null
   });
 
   /* ---------- render del calendario ---------- */
@@ -72,8 +121,11 @@
         const left = a >= mStart ? (a - mStart + 0.5) * CELL + 2 : 0;
         const right = b <= mEnd ? (b - mStart + 0.5) * CELL - 2 : N * CELL;
         if (right - left < 6) continue;
-        const cls = `bar c-${c.id}${a < mStart ? " cut-l" : ""}${b > mEnd ? " cut-r" : ""}`;
-        html += `<button class="${cls}" data-id="${esc(r.id)}" style="left:${left}px;width:${right - left}px" title="${esc(r.nombre + " " + r.apellido)}">${esc(r.nombre)} ${esc((r.apellido || "").charAt(0))}.</button>`;
+        const estado = estadoPago(r);
+        const cls = `bar ${estado.clase}${a < mStart ? " cut-l" : ""}${b > mEnd ? " cut-r" : ""}`;
+        const huesped = [r.nombre, r.apellido].filter(Boolean).join(" ");
+        const saldo = saldoPendiente(r);
+        html += `<button class="${cls}" data-id="${esc(r.id)}" style="left:${left}px;width:${right - left}px" title="${esc(`${huesped} · ${estado.etiqueta} · ${saldo == null ? "saldo sin calcular" : `falta ${money(saldo, r.moneda)}`}`)}">${esc(r.nombre)}${r.apellido ? ` ${esc(r.apellido.charAt(0))}.` : ""}</button>`;
       }
       html += `</div></div>`;
     }
@@ -95,10 +147,11 @@
     $("#listTitle").textContent = `Reservas de ${utc(iso(y, m, 1)).toLocaleDateString("es-UY", { month: "long", timeZone: "UTC" })}`;
     $("#list").innerHTML = delMes.length ? delMes.map(r => `
       <button class="item" data-id="${esc(r.id)}">
-        <span class="stripe c-${r.casa}"></span>
-        <span style="min-width:0"><div class="who">${esc(r.nombre)} ${esc(r.apellido)}</div>
-          <div class="when num">${esc(casaById[r.casa]?.nombre || "")} · ${fmtCorto(r.inicio)} → ${fmtCorto(r.fin)}</div></span>
-        <span class="amt num">${money(r.total, r.moneda)}<small>${noches(r)} ${noches(r) === 1 ? "noche" : "noches"}</small></span>
+        <span class="stripe ${estadoPago(r).clase}"></span>
+        <span style="min-width:0"><div class="who">${esc([r.nombre, r.apellido].filter(Boolean).join(" "))}</div>
+          <div class="when num">${esc(casaById[r.casa]?.nombre || "")} · ${fmtCorto(r.inicio)} → ${fmtCorto(r.fin)} · ${r.adultos} ${r.adultos === 1 ? "adulto" : "adultos"} · ${r.ninos} ${r.ninos === 1 ? "niño" : "niños"}</div>
+          <div class="item-payment ${estadoPago(r).clase}">${estadoPago(r).etiqueta} · ${saldoPendiente(r) == null ? "saldo sin calcular" : `falta ${money(saldoPendiente(r), r.moneda)}`}</div></span>
+        <span class="amt num">${importe(r.total, r.moneda)}<small>${noches(r)} ${noches(r) === 1 ? "noche" : "noches"}</small></span>
       </button>`).join("")
       : `<div class="empty">No hay reservas este mes. Tocá <b>Nueva reserva</b> o un día libre del calendario para cargar la primera.</div>`;
   }
@@ -122,29 +175,42 @@
   }
 
   function openForm(pre = {}) {
-    const r = Object.assign({ casa: CASAS[0]?.id, inicio: "", fin: "", nombre: "", apellido: "", telefono: "", moneda: "USD", precioNoche: "", total: "" }, pre);
+    const r = Object.assign({ casa: CASAS[0]?.id, inicio: "", fin: "", nombre: "", apellido: "", telefono: "", moneda: "UYU", precioNoche: "", total: "", senia: null, adultos: 1, ninos: 0 }, pre);
     const editing = !!pre.id;
+    const telefonoParts = separarTelefono(r.telefono);
     openSheet(`
       <h3 id="sheetTitle">${editing ? "Editar reserva" : "Nueva reserva"} ${closeBtn}</h3>
       <form id="form" novalidate>
-        <div class="fld"><span class="lbl">Casa</span>
-          <div class="casas">${CASAS.map(c => `<label class="casa-opt"><input type="radio" name="casa" id="casa-${c.id}" value="${c.id}" ${r.casa === c.id ? "checked" : ""}><span><i class="c-${c.id}"></i>${esc(c.nombre)}</span></label>`).join("")}</div>
+        <div class="fld"><span class="lbl">Casa *</span>
+          <div class="casas">${CASAS.map(c => `<label class="casa-opt"><input type="radio" name="casa" id="casa-${c.id}" value="${c.id}" ${r.casa === c.id ? "checked" : ""} required><span><i class="c-${c.id}"></i>${esc(c.nombre)}</span></label>`).join("")}</div>
         </div>
         <div class="two">
-          <div class="fld"><label for="inicio">Entrada</label><input type="date" id="inicio" value="${esc(r.inicio)}" required></div>
-          <div class="fld"><label for="fin">Salida</label><input type="date" id="fin" value="${esc(r.fin)}" required></div>
+          <div class="fld"><label for="inicio">Entrada *</label><input type="date" id="inicio" value="${esc(r.inicio)}" required></div>
+          <div class="fld"><label for="fin">Salida *</label><input type="date" id="fin" value="${esc(r.fin)}" required></div>
         </div>
         <div class="nights num" id="nightsInfo"></div>
         <div class="two">
-          <div class="fld"><label for="nombre">Nombre</label><input id="nombre" autocomplete="off" value="${esc(r.nombre)}" required></div>
-          <div class="fld"><label for="apellido">Apellido</label><input id="apellido" autocomplete="off" value="${esc(r.apellido)}" required></div>
+          <div class="fld"><label for="nombre">Nombre *</label><input id="nombre" autocomplete="off" value="${esc(r.nombre)}" required></div>
+          <div class="fld"><label for="apellido">Apellido</label><input id="apellido" autocomplete="off" value="${esc(r.apellido)}"></div>
         </div>
-        <div class="fld"><label for="telefono">Teléfono</label><input id="telefono" type="tel" inputmode="tel" placeholder="099 123 456" value="${esc(r.telefono)}" required></div>
+        <div class="two">
+          <div class="fld"><label for="adultos">Adultos</label><input id="adultos" type="number" inputmode="numeric" min="0" step="1" value="${esc(r.adultos)}" required></div>
+          <div class="fld"><label for="ninos">Niños</label><input id="ninos" type="number" inputmode="numeric" min="0" step="1" value="${esc(r.ninos)}" required></div>
+        </div>
+        <div class="phone-fields">
+          <div class="fld"><label for="codigoPais">País</label><select id="codigoPais">${CODIGOS_PAIS.map(p => `<option value="${p.codigo}" ${telefonoParts.codigo === p.codigo ? "selected" : ""}>${p.pais} ${p.codigo}</option>`).join("")}</select></div>
+          <div class="fld"><label for="telefono">Número *</label><input id="telefono" type="tel" inputmode="tel" placeholder="99 123 456" value="${esc(telefonoParts.numero)}" required></div>
+        </div>
         <div class="three">
           <div class="fld"><label for="moneda">Moneda</label><select id="moneda"><option value="USD" ${r.moneda === "USD" ? "selected" : ""}>US$</option><option value="UYU" ${r.moneda === "UYU" ? "selected" : ""}>$U</option></select></div>
-          <div class="fld"><label for="precio">Por noche</label><input id="precio" type="number" inputmode="decimal" min="0" step="any" class="num" value="${esc(r.precioNoche)}" required></div>
-          <div class="fld"><label for="total">Total</label><input id="total" type="number" inputmode="decimal" min="0" step="any" class="num" value="${esc(r.total)}" required></div>
+          <div class="fld"><label for="precio">Por noche</label><input id="precio" type="number" inputmode="decimal" min="0" step="any" class="num" value="${r.precioNoche == null ? "" : esc(r.precioNoche)}"></div>
+          <div class="fld"><label for="total">Total</label><input id="total" type="number" inputmode="decimal" min="0" step="any" class="num" value="${r.total == null ? "" : esc(r.total)}"></div>
         </div>
+        <div class="two">
+          <div class="fld"><label for="senia">Seña pagada</label><input id="senia" type="number" inputmode="decimal" min="0" step="0.01" class="num" value="${r.senia == null ? "" : esc(r.senia)}"></div>
+          <div class="fld"><span class="lbl">Estado y saldo</span><div class="payment-summary" id="paymentSummary"><strong id="paymentStatus"></strong><small id="paymentBalance"></small></div></div>
+        </div>
+        <div class="fld"><label for="comentarios">Comentarios</label><textarea id="comentarios" rows="3">${esc(r.comentarios)}</textarea></div>
         <div class="err" id="formErr" hidden></div>
         <div class="actions">
           <button type="button" class="btn" data-close>Cancelar</button>
@@ -154,18 +220,29 @@
 
     const f = id => document.getElementById(id);
     let totalManual = editing && Number(r.total) !== noches(r) * Number(r.precioNoche);
+    const actualizarPago = () => {
+      const total = f("total").value === "" ? null : Number(f("total").value);
+      const senia = f("senia").value === "" ? null : Number(f("senia").value);
+      const estado = estadoPago({ total, senia });
+      const excedeTotal = senia !== null && total !== null && senia > total;
+      f("paymentSummary").className = `payment-summary ${excedeTotal ? "pay-unpaid" : estado.clase}`;
+      f("paymentStatus").textContent = excedeTotal ? "La seña supera el total" : estado.etiqueta;
+      f("paymentBalance").textContent = total !== null ? `Falta pagar: ${money(Math.max(0, total - (senia || 0)), f("moneda").value)}` : "Completá el total para calcular el saldo";
+    };
     const recalc = () => {
       const a = f("inicio").value, b = f("fin").value;
       const n = a && b ? dn(b) - dn(a) : 0;
       f("nightsInfo").textContent = n > 0 ? `${n} ${n === 1 ? "noche" : "noches"}` + (Number(f("precio").value) ? ` × ${money(f("precio").value, f("moneda").value)}` : "") : "";
       if (!totalManual && n > 0 && f("precio").value !== "") f("total").value = Math.round(n * Number(f("precio").value) * 100) / 100;
+      actualizarPago();
     };
     f("inicio").addEventListener("change", () => {
       if (f("inicio").value && (!f("fin").value || f("fin").value <= f("inicio").value)) f("fin").value = fromDn(dn(f("inicio").value) + 1);
       recalc();
     });
     ["fin", "precio", "moneda"].forEach(id => f(id).addEventListener("input", recalc));
-    f("total").addEventListener("input", () => { totalManual = f("total").value !== ""; });
+    f("total").addEventListener("input", () => { totalManual = f("total").value !== ""; actualizarPago(); });
+    f("senia").addEventListener("input", actualizarPago);
     recalc();
 
     f("form").addEventListener("submit", async e => {
@@ -174,8 +251,13 @@
         casa: document.querySelector('input[name="casa"]:checked')?.value,
         inicio: f("inicio").value, fin: f("fin").value,
         nombre: f("nombre").value.trim(), apellido: f("apellido").value.trim(),
-        telefono: f("telefono").value.trim(), moneda: f("moneda").value,
-        precioNoche: Number(f("precio").value), total: Number(f("total").value)
+        telefono: telefonoInternacional(f("codigoPais").value, f("telefono").value), moneda: f("moneda").value,
+        precioNoche: f("precio").value === "" ? null : Number(f("precio").value),
+        total: f("total").value === "" ? null : Number(f("total").value),
+        senia: f("senia").value === "" ? null : Number(f("senia").value),
+        adultos: f("adultos").value === "" ? null : Number(f("adultos").value),
+        ninos: f("ninos").value === "" ? null : Number(f("ninos").value),
+        comentarios: f("comentarios").value.trim()
       };
       const err = validar(data, pre.id);
       if (err) { f("formErr").innerHTML = err; f("formErr").hidden = false; return; }
@@ -197,32 +279,44 @@
     if (!d.casa) return "Elegí una casa.";
     if (!d.inicio || !d.fin) return "Completá la fecha de entrada y la de salida.";
     if (dn(d.fin) <= dn(d.inicio)) return "La salida tiene que ser al menos un día después de la entrada.";
-    if (!d.nombre || !d.apellido) return "Completá nombre y apellido del huésped.";
+    if (!d.nombre) return "Completá el nombre del huésped.";
     if (!d.telefono) return "Completá el teléfono del huésped.";
-    if (!(d.precioNoche > 0)) return "Ingresá cuánto paga por noche.";
-    if (!(d.total > 0)) return "Ingresá el total de la estadía.";
+    if (d.precioNoche !== null && (!Number.isFinite(d.precioNoche) || d.precioNoche <= 0)) return "El precio por noche debe ser mayor que cero.";
+    if (d.total !== null && (!Number.isFinite(d.total) || d.total <= 0)) return "El total debe ser mayor que cero.";
+    if (d.senia !== null && (!Number.isFinite(d.senia) || d.senia < 0)) return "La seña debe ser un importe válido igual o mayor a cero.";
+    if (d.senia !== null && d.total !== null && d.senia > d.total) return "La seña no puede ser mayor que el total de la estadía.";
+    if (!Number.isInteger(d.adultos) || d.adultos < 0) return "Ingresá una cantidad válida de adultos.";
+    if (!Number.isInteger(d.ninos) || d.ninos < 0) return "Ingresá una cantidad válida de niños.";
     const choque = reservas.find(o => o.id !== id && o.casa === d.casa && dn(d.inicio) < dn(o.fin) && dn(d.fin) > dn(o.inicio));
-    if (choque) return `La casa ${esc(casaById[d.casa].nombre)} ya está reservada por <b>${esc(choque.nombre)} ${esc(choque.apellido)}</b> del ${fmtCorto(choque.inicio)} al ${fmtCorto(choque.fin)}. Cambiá las fechas o la casa.`;
+    if (choque) return `La casa ${esc(casaById[d.casa].nombre)} ya está reservada por <b>${esc([choque.nombre, choque.apellido].filter(Boolean).join(" "))}</b> del ${fmtCorto(choque.inicio)} al ${fmtCorto(choque.fin)}. Cambiá las fechas o la casa.`;
     return null;
   }
 
   function openDetail(id) {
     const r = reservas.find(x => x.id === id); if (!r) return;
-    const tel = (r.telefono || "").replace(/\D/g, "");
-    const wa = tel ? "https://wa.me/" + (tel.startsWith("598") ? tel : "598" + tel.replace(/^0/, "")) : "";
+    const estado = estadoPago(r);
+    const telefono = normalizarTelefonoGuardado(r.telefono);
+    const tel = telefono.replace(/\D/g, "");
+    const wa = tel ? "https://wa.me/" + tel : "";
     openSheet(`
-      <h3 id="sheetTitle">${esc(r.nombre)} ${esc(r.apellido)} ${closeBtn}</h3>
+      <h3 id="sheetTitle">${esc([r.nombre, r.apellido].filter(Boolean).join(" "))} ${closeBtn}</h3>
       <div class="detail">
         <div class="drow"><span>Casa</span><span class="tag"><span class="swatch c-${r.casa}"></span>${esc(casaById[r.casa]?.nombre || "")}</span></div>
         <div class="drow"><span>Entrada</span><span class="num">${fmtLargo(r.inicio)}</span></div>
         <div class="drow"><span>Salida</span><span class="num">${fmtLargo(r.fin)}</span></div>
         <div class="drow"><span>Noches</span><span class="num">${noches(r)}</span></div>
-        <div class="drow"><span>Por noche</span><span class="num">${money(r.precioNoche, r.moneda)}</span></div>
-        <div class="drow"><span>Total</span><span class="num">${money(r.total, r.moneda)}</span></div>
-        <div class="drow"><span>Teléfono</span><span class="num">${esc(r.telefono)}</span></div>
+        <div class="drow"><span>Adultos</span><span class="num">${r.adultos}</span></div>
+        <div class="drow"><span>Niños</span><span class="num">${r.ninos}</span></div>
+        ${r.comentarios ? `<div class="drow"><span>Comentarios</span><span class="comments-text">${esc(r.comentarios).replace(/\n/g, "<br>")}</span></div>` : ""}
+        <div class="drow"><span>Por noche</span><span class="num">${importe(r.precioNoche, r.moneda)}</span></div>
+        <div class="drow"><span>Total</span><span class="num">${importe(r.total, r.moneda)}</span></div>
+        <div class="drow"><span>Seña paga</span><span class="num">${importe(r.senia, r.moneda)}</span></div>
+        <div class="drow"><span>Falta pagar</span><span class="num">${saldoPendiente(r) == null ? "Sin calcular" : money(saldoPendiente(r), r.moneda)}</span></div>
+        <div class="drow"><span>Estado de pago</span><span class="payment-badge ${estado.clase}">${estado.etiqueta}</span></div>
+        <div class="drow"><span>Teléfono</span><span class="num">${esc(telefono)}</span></div>
       </div>
       <div class="links">
-        ${tel ? `<a href="tel:${esc(tel)}">Llamar</a>` : ""}
+        ${tel ? `<a href="tel:+${esc(tel)}">Llamar</a>` : ""}
         ${wa ? `<a href="${wa}" target="_blank" rel="noopener">WhatsApp</a>` : ""}
       </div>
       <div class="err" id="detErr" hidden></div>

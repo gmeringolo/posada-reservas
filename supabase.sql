@@ -13,14 +13,19 @@ create table if not exists public.reservas (
   inicio        date not null,                 -- día de entrada
   fin           date not null,                 -- día de salida (check-out)
   nombre        text not null,
-  apellido      text not null,
+  apellido      text,
   telefono      text not null,
   moneda        text not null default 'USD' check (moneda in ('USD','UYU')),
-  precio_noche  numeric(10,2) not null check (precio_noche >= 0),
-  total         numeric(10,2) not null check (total >= 0),
+  precio_noche  numeric(10,2) check (precio_noche >= 0),
+  total         numeric(10,2) check (total >= 0),
+  senia         numeric(10,2),
+  adultos       integer not null default 1 check (adultos >= 0),
+  ninos         integer not null default 0 check (ninos >= 0),
+  comentarios   text,
   creada        timestamptz not null default now(),
   actualizada   timestamptz not null default now(),
   constraint fechas_validas check (fin > inicio),
+  constraint reservas_senia_dentro_del_total check (senia is null or (senia >= 0 and (total is null or senia <= total))),
   -- La base rechaza dos reservas que se pisen en la misma casa,
   -- aunque las dos personas guarden al mismo tiempo.
   -- El día de salida de una puede ser el de entrada de la siguiente.
@@ -29,6 +34,24 @@ create table if not exists public.reservas (
     daterange(inicio, fin, '[)') with &&
   )
 );
+
+-- Actualiza también las tablas existentes sin perder reservas.
+alter table public.reservas alter column apellido drop not null;
+alter table public.reservas alter column precio_noche drop not null;
+alter table public.reservas alter column total drop not null;
+alter table public.reservas add column if not exists senia numeric(10,2);
+alter table public.reservas alter column senia drop not null;
+alter table public.reservas alter column senia drop default;
+alter table public.reservas add column if not exists adultos integer not null default 1;
+alter table public.reservas add column if not exists ninos integer not null default 0;
+alter table public.reservas add column if not exists comentarios text;
+alter table public.reservas drop constraint if exists reservas_adultos_no_negativos;
+alter table public.reservas add constraint reservas_adultos_no_negativos check (adultos >= 0);
+alter table public.reservas drop constraint if exists reservas_ninos_no_negativos;
+alter table public.reservas add constraint reservas_ninos_no_negativos check (ninos >= 0);
+alter table public.reservas drop constraint if exists reservas_senia_dentro_del_total;
+alter table public.reservas add constraint reservas_senia_dentro_del_total
+  check (senia is null or (senia >= 0 and (total is null or senia <= total)));
 
 create index if not exists reservas_inicio_idx on public.reservas (inicio);
 

@@ -12,21 +12,43 @@ jobs:
   ping:
     runs-on: ubuntu-latest
     steps:
-      - name: Consultar la tabla de reservas
+      - name: Tocar el timbre de la base
         env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          RAW_URL: ${{ secrets.SUPABASE_URL }}
+          RAW_KEY: ${{ secrets.SUPABASE_KEY }}
         run: |
-          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_KEY" ]; then
+          # Limpia espacios, saltos de línea y comillas que se cuelan al pegar
+          URL=$(printf '%s' "$RAW_URL" | tr -d ' \t\r\n"' | sed 's:/*$::')
+          KEY=$(printf '%s' "$RAW_KEY" | tr -d ' \t\r\n"'"'")
+
+          if [ -z "$URL" ] || [ -z "$KEY" ]; then
             echo "Faltan los secretos SUPABASE_URL o SUPABASE_KEY en el repositorio."
             exit 1
           fi
-          status=$(curl -s -o /dev/null -w "%{http_code}" \
-            "$SUPABASE_URL/rest/v1/reservas?select=id&limit=1" \
-            -H "apikey: $SUPABASE_KEY" \
-            -H "Authorization: Bearer $SUPABASE_KEY")
+
+          echo "URL usada: $URL"
+          echo "Clave: empieza con '${KEY:0:6}…' y tiene ${#KEY} caracteres"
+          case "$KEY" in
+            eyJ*|sb_publishable_*) ;;
+            *) echo "La clave no empieza con 'eyJ' ni con 'sb_publishable_'. Revisá que hayas copiado la anon key."; exit 1 ;;
+          esac
+
+          # Llama a la función ping() de la base: no lee ninguna reserva,
+          # así la tabla sigue protegida por el login.
+          status=$(curl -s -o respuesta.txt -w "%{http_code}" -X POST \
+            "$URL/rest/v1/rpc/ping" \
+            -H "apikey: $KEY" -H "Content-Type: application/json" -d '{}')
           echo "Respuesta de Supabase: $status"
+
           if [ "$status" -ge 400 ]; then
-            echo "La base no respondió bien. Si el proyecto está pausado, reactivalo desde el panel de Supabase."
+            echo "Detalle: $(head -c 300 respuesta.txt)"
+            if [ "$status" = "404" ]; then
+              echo "Falta la función ping() en la base. Ejecutá en Supabase (SQL Editor) el bloque 7 de supabase.sql."
+            elif [ "$status" = "401" ]; then
+              echo "Supabase rechazó la clave. Volvé a copiar la anon key con el botón Copy y pegala en el secreto SUPABASE_KEY."
+            else
+              echo "La base no respondió bien. Si el proyecto está pausado, reactivalo desde el panel de Supabase."
+            fi
             exit 1
           fi
+          echo "Listo: la base está activa."

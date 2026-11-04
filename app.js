@@ -405,7 +405,7 @@
       if (otra && intercambioPendiente !== otra.id) {
         // Primera vez: explicar el intercambio y pedir confirmación
         intercambioPendiente = otra.id;
-        f("formSwap").innerHTML = `${nombreCasa(data.casa)} está ocupada por <b>${esc(huespedDe(otra))}</b> con las mismas fechas (${fmtCorto(otra.inicio)} → ${fmtCorto(otra.fin)}). Si confirmás, se intercambian las casas: <b>${esc(huespedDe(data))}</b> pasa a ${nombreCasa(data.casa)} y <b>${esc(huespedDe(otra))}</b> pasa a ${nombreCasa(ocupacion.casaOriginal)}.`;
+        f("formSwap").innerHTML = `${nombreCasa(data.casa)} está ocupada por <b>${esc(huespedDe(otra))}</b> (${fmtCorto(otra.inicio)} → ${fmtCorto(otra.fin)}). Si confirmás, se intercambian las casas y cada reserva mantiene sus fechas: <b>${esc(huespedDe(data))}</b> (${fmtCorto(data.inicio)} → ${fmtCorto(data.fin)}) pasa a ${nombreCasa(data.casa)} y <b>${esc(huespedDe(otra))}</b> pasa a ${nombreCasa(ocupacion.casaOriginal)}.`;
         f("formSwap").hidden = false;
         f("saveBtn").textContent = "Intercambiar casas";
         return;
@@ -455,16 +455,18 @@
   const listaChoques = (choques, inicio, fin) => choques.map(o => detalleChoque(o, inicio, fin)).join(", y por ");
 
   // Revisa si la casa y las fechas están libres.
-  // Devuelve null (libre), { error } (ocupada) o { intercambio } (otra reserva con las mismas fechas exactas).
+  // Devuelve null (libre), { error } (ocupada) o { intercambio } (se pueden intercambiar las casas).
+  // Intercambio: al pasar una reserva a otra casa ocupada por UNA sola reserva, las dos cambian
+  // de casa y cada una mantiene sus fechas, siempre que ninguna choque con una tercera reserva.
   function revisarOcupacion(d, id) {
     const choques = choquesEn(d.casa, d.inicio, d.fin, [id]);
     if (!choques.length) return null;
     const original = id ? reservas.find(o => o.id === id) : null;
     const otra = choques.length === 1 ? choques[0] : null;
-    if (original && otra && original.casa !== d.casa && otra.inicio === d.inicio && otra.fin === d.fin) {
+    if (original && otra && original.casa !== d.casa) {
       const bloqueos = choquesEn(original.casa, otra.inicio, otra.fin, [id, otra.id]);
       if (bloqueos.length) {
-        return { error: `No se pueden intercambiar las casas: ${nombreCasa(d.casa)} tiene a <b>${esc(huespedDe(otra))}</b> con las mismas fechas, pero ${nombreCasa(original.casa)} ya está ocupada por ${listaChoques(bloqueos, otra.inicio, otra.fin)}. Elegí otra casa o cambiá las fechas.` };
+        return { error: `No se pueden intercambiar las casas: para que <b>${esc(huespedDe(otra))}</b> pase a ${nombreCasa(original.casa)} (${fmtCorto(otra.inicio)} → ${fmtCorto(otra.fin)}), esa casa tiene que estar libre, pero está ocupada por ${listaChoques(bloqueos, otra.inicio, otra.fin)}. Elegí otra casa o cambiá las fechas.` };
       }
       return { intercambio: otra, casaOriginal: original.casa };
     }

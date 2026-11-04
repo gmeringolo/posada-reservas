@@ -64,8 +64,8 @@ alter table public.reservas add constraint sin_superposicion exclude using gist 
 create index if not exists reservas_inicio_idx on public.reservas (inicio);
 
 -- Intercambio de casas: la reserva p_id pasa a la casa de p_otro (con los datos de p_datos)
--- y p_otro pasa a la casa original de p_id. Las dos tienen que tener las mismas fechas.
--- Todo se hace junto: si algo falla, no cambia nada.
+-- y p_otro pasa a la casa original de p_id. Cada una mantiene sus fechas.
+-- Todo se hace junto: si al terminar alguna se pisa con otra reserva, no cambia nada.
 create or replace function public.intercambiar_casas(p_id uuid, p_otro uuid, p_datos jsonb)
 returns void
 language plpgsql
@@ -83,10 +83,8 @@ begin
   if v_casa_original is null or v_otro.id is null then
     raise exception 'Una de las reservas ya no existe' using errcode = 'PH001';
   end if;
-  if v_otro.casa <> p_datos->>'casa'
-     or v_otro.inicio <> (p_datos->>'inicio')::date
-     or v_otro.fin <> (p_datos->>'fin')::date then
-    raise exception 'Las fechas de las reservas ya no coinciden' using errcode = 'PH001';
+  if v_otro.casa <> p_datos->>'casa' or v_otro.casa = v_casa_original then
+    raise exception 'La otra reserva ya no está en esa casa' using errcode = 'PH001';
   end if;
 
   update public.reservas set

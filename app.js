@@ -325,6 +325,7 @@
         </div>
         <div class="fld"><label for="comentarios">Comentarios</label><textarea id="comentarios" rows="3">${esc(r.comentarios)}</textarea></div>
         <div class="err" id="formErr" hidden></div>
+        <div class="notice" id="formSwap" hidden></div>
         <div class="actions">
           <button type="button" class="btn" data-close>Cancelar</button>
           <button type="submit" class="btn primary" id="saveBtn">${editing ? "Guardar cambios" : "Guardar reserva"}</button>
@@ -367,6 +368,18 @@
     f("senia").addEventListener("input", actualizarPago);
     recalc();
 
+    // Intercambio de casas pendiente de confirmar (id de la otra reserva)
+    const textoGuardar = editing ? "Guardar cambios" : "Guardar reserva";
+    let intercambioPendiente = null;
+    const cancelarIntercambio = () => {
+      if (!intercambioPendiente) return;
+      intercambioPendiente = null;
+      f("formSwap").hidden = true;
+      f("saveBtn").textContent = textoGuardar;
+    };
+    // Si se cambia cualquier dato, hay que volver a confirmar
+    ["input", "change"].forEach(ev => f("form").addEventListener(ev, cancelarIntercambio));
+
     f("form").addEventListener("submit", async e => {
       e.preventDefault();
       const data = {
@@ -381,23 +394,38 @@
         ninos: f("ninos").value === "" ? null : Number(f("ninos").value),
         comentarios: f("comentarios").value.trim()
       };
-      const err = validar(data, pre.id);
-      if (err) { f("formErr").innerHTML = err; f("formErr").hidden = false; return; }
+      f("formErr").hidden = true;
+      const err = validar(data);
+      const ocupacion = err ? null : revisarOcupacion(data, pre.id);
+      if (err || ocupacion?.error) {
+        cancelarIntercambio();
+        f("formErr").innerHTML = err || ocupacion.error; f("formErr").hidden = false; return;
+      }
+      const otra = ocupacion?.intercambio;
+      if (otra && intercambioPendiente !== otra.id) {
+        // Primera vez: explicar el intercambio y pedir confirmación
+        intercambioPendiente = otra.id;
+        f("formSwap").innerHTML = `${nombreCasa(data.casa)} está ocupada por <b>${esc(huespedDe(otra))}</b> con las mismas fechas (${fmtCorto(otra.inicio)} → ${fmtCorto(otra.fin)}). Si confirmás, se intercambian las casas: <b>${esc(huespedDe(data))}</b> pasa a ${nombreCasa(data.casa)} y <b>${esc(huespedDe(otra))}</b> pasa a ${nombreCasa(ocupacion.casaOriginal)}.`;
+        f("formSwap").hidden = false;
+        f("saveBtn").textContent = "Intercambiar casas";
+        return;
+      }
       f("saveBtn").disabled = true; f("saveBtn").textContent = "Guardando…";
       try {
-        await guardar(data, pre.id);
+        if (otra) await intercambiar(data, pre.id, otra.id, ocupacion.casaOriginal);
+        else await guardar(data, pre.id);
         closeSheet();
         const ini = dn(data.inicio), vis = diasVisibles();
         if (ini < vis.a || ini > vis.b) irA(ini - 2, true);
-        toast(pre.id ? "Cambios guardados" : "Reserva guardada");
+        toast(otra ? "Casas intercambiadas" : pre.id ? "Cambios guardados" : "Reserva guardada");
       } catch (ex) {
         f("formErr").textContent = mensajeError(ex); f("formErr").hidden = false;
-        f("saveBtn").disabled = false; f("saveBtn").textContent = pre.id ? "Guardar cambios" : "Guardar reserva";
+        f("saveBtn").disabled = false; f("saveBtn").textContent = intercambioPendiente ? "Intercambiar casas" : textoGuardar;
       }
     });
   }
 
-  function validar(d, id) {
+  function validar(d) {
     if (!d.casa) return "Elegí una casa.";
     if (!d.inicio || !d.fin) return "Completá la fecha de entrada y la de salida.";
     if (dn(d.fin) <= dn(d.inicio)) return "La salida tiene que ser al menos un día después de la entrada.";
@@ -409,18 +437,38 @@
     if (d.senia !== null && d.total !== null && d.senia > d.total) return "La seña no puede ser mayor que el total de la estadía.";
     if (!Number.isInteger(d.adultos) || d.adultos < 0) return "Ingresá una cantidad válida de adultos.";
     if (!Number.isInteger(d.ninos) || d.ninos < 0) return "Ingresá una cantidad válida de niños.";
-    const inicio = dn(d.inicio), fin = dn(d.fin);
-    const choque = reservas.find(o => o.id !== id && o.casa === d.casa && inicio < dn(o.fin) && fin > dn(o.inicio));
-    if (choque) {
-      const inicioSolapado = Math.max(inicio, dn(choque.inicio));
-      const finSolapado = Math.min(fin, dn(choque.fin));
-      const nochesSolapadas = finSolapado - inicioSolapado;
-      const desde = fmtCorto(fromDn(inicioSolapado));
-      const hasta = fmtCorto(fromDn(finSolapado - 1));
-      const huesped = [choque.nombre, choque.apellido].filter(Boolean).join(" ");
-      return `No se puede cambiar a ${esc(casaById[d.casa].nombre)}: ya está ocupada por <b>${esc(huesped)}</b> durante ${nochesSolapadas === 1 ? "la noche" : "las noches"} del ${desde}${desde === hasta ? "" : ` al ${hasta}`}. Elegí otra casa o cambiá las fechas.`;
-    }
     return null;
+  }
+
+  /* ---------- casa ocupada e intercambio ---------- */
+  const huespedDe = r => [r.nombre, r.apellido].filter(Boolean).join(" ");
+  const nombreCasa = id => esc(casaById[id]?.nombre || id);
+  // Reservas de esa casa que se pisan con las fechas dadas (sin contar las de "excluir")
+  const choquesEn = (casa, inicio, fin, excluir) =>
+    reservas.filter(o => !excluir.includes(o.id) && o.casa === casa && dn(inicio) < dn(o.fin) && dn(fin) > dn(o.inicio));
+  // "<b>Juan Pérez</b> durante las noches del 10 nov al 14 nov"
+  const detalleChoque = (o, inicio, fin) => {
+    const desdeN = Math.max(dn(inicio), dn(o.inicio)), hastaN = Math.min(dn(fin), dn(o.fin));
+    const desde = fmtCorto(fromDn(desdeN)), hasta = fmtCorto(fromDn(hastaN - 1));
+    return `<b>${esc(huespedDe(o))}</b> durante ${hastaN - desdeN === 1 ? "la noche" : "las noches"} del ${desde}${desde === hasta ? "" : ` al ${hasta}`}`;
+  };
+  const listaChoques = (choques, inicio, fin) => choques.map(o => detalleChoque(o, inicio, fin)).join(", y por ");
+
+  // Revisa si la casa y las fechas están libres.
+  // Devuelve null (libre), { error } (ocupada) o { intercambio } (otra reserva con las mismas fechas exactas).
+  function revisarOcupacion(d, id) {
+    const choques = choquesEn(d.casa, d.inicio, d.fin, [id]);
+    if (!choques.length) return null;
+    const original = id ? reservas.find(o => o.id === id) : null;
+    const otra = choques.length === 1 ? choques[0] : null;
+    if (original && otra && original.casa !== d.casa && otra.inicio === d.inicio && otra.fin === d.fin) {
+      const bloqueos = choquesEn(original.casa, otra.inicio, otra.fin, [id, otra.id]);
+      if (bloqueos.length) {
+        return { error: `No se pueden intercambiar las casas: ${nombreCasa(d.casa)} tiene a <b>${esc(huespedDe(otra))}</b> con las mismas fechas, pero ${nombreCasa(original.casa)} ya está ocupada por ${listaChoques(bloqueos, otra.inicio, otra.fin)}. Elegí otra casa o cambiá las fechas.` };
+      }
+      return { intercambio: otra, casaOriginal: original.casa };
+    }
+    return { error: `No se puede ${id ? "cambiar a" : "reservar en"} ${nombreCasa(d.casa)}: ya está ocupada por ${listaChoques(choques, d.inicio, d.fin)}. Elegí otra casa o cambiá las fechas.` };
   }
 
   function openDetail(id) {
@@ -488,6 +536,18 @@
     await cargar();
   }
 
+  // La reserva "id" pasa a la casa de "otroId" con los datos nuevos, y "otroId" pasa a "casaOriginal".
+  // En Supabase se hace todo junto con la función intercambiar_casas (ver supabase.sql).
+  async function intercambiar(data, id, otroId, casaOriginal) {
+    if (!sb) { // modo prueba
+      reservas = reservas.map(r => r.id === id ? { id, ...data } : r.id === otroId ? { ...r, casa: casaOriginal } : r);
+      render(); return;
+    }
+    const { error } = await sb.rpc("intercambiar_casas", { p_id: id, p_otro: otroId, p_datos: toRow(data) });
+    if (error) throw error;
+    await cargar();
+  }
+
   async function eliminar(id) {
     if (!sb) { reservas = reservas.filter(r => r.id !== id); render(); return; }
     const { error } = await sb.from("reservas").delete().eq("id", id);
@@ -501,6 +561,8 @@
     if (code === "42501") return "Supabase rechazó el guardado por permisos de la base de datos. Hay que actualizar los permisos ejecutando de nuevo el archivo supabase.sql; no significa que hayas ingresado mal.";
     if (code === "PGRST301") return "La sesión de acceso venció o no es válida. Tocá Salir e ingresá de nuevo.";
     if (code === "23514") return "Algún dato no es válido (fechas, casa o moneda). Revisá el formulario.";
+    if (code === "PGRST202") return "Falta actualizar la base de datos para poder intercambiar casas: ejecutá de nuevo el archivo supabase.sql en Supabase.";
+    if (code === "PH001") return "No se pudo intercambiar porque la otra reserva cambió mientras tanto. Cerrá, revisá el calendario e intentá de nuevo.";
     return "No se pudo guardar. Revisá tu conexión e intentá de nuevo." + (ex?.message ? ` (${ex.message})` : "");
   }
 

@@ -32,7 +32,7 @@ create table if not exists public.reservas (
   constraint sin_superposicion exclude using gist (
     casa with =,
     daterange(inicio, fin, '[)') with &&
-  )
+  ) deferrable initially immediate
 );
 
 -- Actualiza también las tablas existentes sin perder reservas.
@@ -53,7 +53,65 @@ alter table public.reservas drop constraint if exists reservas_senia_dentro_del_
 alter table public.reservas add constraint reservas_senia_dentro_del_total
   check (senia is null or (senia >= 0 and (total is null or senia <= total)));
 
+-- La regla de no superposición se puede postergar hasta el final de una operación.
+-- Así se pueden intercambiar las casas de dos reservas con las mismas fechas.
+alter table public.reservas drop constraint if exists sin_superposicion;
+alter table public.reservas add constraint sin_superposicion exclude using gist (
+  casa with =,
+  daterange(inicio, fin, '[)') with &&
+) deferrable initially immediate;
+
 create index if not exists reservas_inicio_idx on public.reservas (inicio);
+
+-- Intercambio de casas: la reserva p_id pasa a la casa de p_otro (con los datos de p_datos)
+-- y p_otro pasa a la casa original de p_id. Las dos tienen que tener las mismas fechas.
+-- Todo se hace junto: si algo falla, no cambia nada.
+create or replace function public.intercambiar_casas(p_id uuid, p_otro uuid, p_datos jsonb)
+returns void
+language plpgsql
+security invoker
+set search_path = public
+as $$
+declare
+  v_casa_original text;
+  v_otro public.reservas%rowtype;
+begin
+  set constraints sin_superposicion deferred;
+
+  select casa into v_casa_original from public.reservas where id = p_id for update;
+  select * into v_otro from public.reservas where id = p_otro for update;
+  if v_casa_original is null or v_otro.id is null then
+    raise exception 'Una de las reservas ya no existe' using errcode = 'PH001';
+  end if;
+  if v_otro.casa <> p_datos->>'casa'
+     or v_otro.inicio <> (p_datos->>'inicio')::date
+     or v_otro.fin <> (p_datos->>'fin')::date then
+    raise exception 'Las fechas de las reservas ya no coinciden' using errcode = 'PH001';
+  end if;
+
+  update public.reservas set
+    casa         = p_datos->>'casa',
+    inicio       = (p_datos->>'inicio')::date,
+    fin          = (p_datos->>'fin')::date,
+    nombre       = p_datos->>'nombre',
+    apellido     = p_datos->>'apellido',
+    telefono     = p_datos->>'telefono',
+    moneda       = p_datos->>'moneda',
+    precio_noche = (p_datos->>'precio_noche')::numeric,
+    total        = (p_datos->>'total')::numeric,
+    senia        = (p_datos->>'senia')::numeric,
+    adultos      = (p_datos->>'adultos')::integer,
+    ninos        = (p_datos->>'ninos')::integer,
+    comentarios  = p_datos->>'comentarios',
+    actualizada  = now()
+  where id = p_id;
+
+  update public.reservas set casa = v_casa_original, actualizada = now() where id = p_otro;
+end
+$$;
+
+revoke execute on function public.intercambiar_casas(uuid, uuid, jsonb) from public, anon;
+grant execute on function public.intercambiar_casas(uuid, uuid, jsonb) to authenticated;
 
 -- 3) Actualizaciones en tiempo real (para que el otro celular se entere solo)
 do $$

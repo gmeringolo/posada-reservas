@@ -58,6 +58,7 @@ header.top{position:sticky;top:0;z-index:5;background:var(--bg);
 .tl-cells{display:flex;position:relative}
 .cell{width:var(--cell);flex:none;border:0;border-right:1px solid var(--line);background:transparent;padding:0}
 .cell.wk{background:var(--wknd)}
+.cell.month-start{box-shadow:inset 2px 0 0 var(--muted)}
 .head .cell{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;font-size:11px;color:var(--muted)}
 .head .cell b{font-size:15px;color:var(--ink);font-weight:700}
 .head .cell.today b{background:var(--accent);color:var(--accent-ink);border-radius:8px;padding:0 5px}

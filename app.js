@@ -27,7 +27,11 @@
   let reservas = [];
   let canal = null;
   const now = new Date();
-  let view = { y: now.getFullYear(), m: now.getMonth() };
+  // Rango de meses dibujado en el calendario (se extiende solo al scrollear)
+  const mesAdd = (y, m, k) => { const t = y * 12 + m + k; return { y: Math.floor(t / 12), m: ((t % 12) + 12) % 12 }; };
+  let rango = { ...mesAdd(now.getFullYear(), now.getMonth(), -2), meses: 12 };
+  let visKey = "";          // meses visibles la última vez que se actualizó la lista
+  let navObjetivo = null;   // destino de un scroll suave en curso (flechas)
 
   /* ---------- fechas y formato ---------- */
   const pad = n => String(n).padStart(2, "0");
@@ -111,29 +115,111 @@
     adultos: d.adultos, ninos: d.ninos, comentarios: d.comentarios || null
   });
 
+  /* ---------- rango y meses visibles ---------- */
+  const rangoIni = () => dn(iso(rango.y, rango.m, 1));
+  const rangoFin = () => { const e = mesAdd(rango.y, rango.m, rango.meses); return dn(iso(e.y, e.m, 1)) - 1; };
+  const mesDeDn = n => { const [y, m] = fromDn(n).split("-").map(Number); return { y, m: m - 1 }; };
+  const nombreMes = (y, m, tipo) => utc(iso(y, m, 1)).toLocaleDateString("es-UY", { month: tipo, timeZone: "UTC" }).replace(".", "");
+  const etiquetaMeses = (p, q, conAnio) => {
+    if (p.y === q.y && p.m === q.m) return nombreMes(p.y, p.m, "long") + (conAnio ? ` ${p.y}` : "");
+    if (p.y === q.y || !conAnio) return `${nombreMes(p.y, p.m, "short")} – ${nombreMes(q.y, q.m, "short")}` + (conAnio ? ` ${q.y}` : "");
+    return `${nombreMes(p.y, p.m, "short")} ${p.y} – ${nombreMes(q.y, q.m, "short")} ${q.y}`;
+  };
+
+  // Primer y último día (dn) que se ven al menos a la mitad en pantalla
+  function diasVisibles() {
+    const sc = $("#scroller");
+    const label = $(".tl-label")?.offsetWidth || 100;
+    const ini = rangoIni(), fin = rangoFin();
+    const first = Math.max(0, Math.floor((sc.scrollLeft + CELL / 2) / CELL));
+    const last = Math.max(first, Math.floor((sc.scrollLeft + sc.clientWidth - label - CELL / 2) / CELL));
+    return { a: Math.min(fin, ini + first), b: Math.min(fin, ini + last) };
+  }
+
+  // Agrega meses antes y/o después del rango sin que la vista salte
+  function agregarMeses(antes, despues) {
+    if (!antes && !despues) return;
+    const sc = $("#scroller"), left = sc.scrollLeft, iniViejo = rangoIni();
+    if (antes) Object.assign(rango, mesAdd(rango.y, rango.m, -antes));
+    rango.meses += antes + despues;
+    renderTimeline();
+    sc.scrollLeft = left + (iniViejo - rangoIni()) * CELL;
+  }
+
+  // Deja al menos 2 meses de margen a cada lado del mes indicado
+  function asegurarMes(y, m) {
+    const t = y * 12 + m, rs = rango.y * 12 + rango.m, re = rs + rango.meses - 1;
+    agregarMeses(Math.max(0, rs - (t - 2)), Math.max(0, t + 2 - re));
+  }
+
+  function extenderSiHaceFalta() {
+    const { a, b } = diasVisibles();
+    if (a - rangoIni() < 31) agregarMeses(3, 0);
+    else if (rangoFin() - b < 31) agregarMeses(0, 3);
+  }
+
+  function irA(n, suave) {
+    const { y, m } = mesDeDn(n);
+    asegurarMes(y, m);
+    const left = Math.max(0, (n - rangoIni()) * CELL);
+    navObjetivo = suave ? { n, left } : null;
+    clearTimeout(navT);
+    if (suave) navT = setTimeout(terminarNav, 1000); // por si el scroll suave no llega justo al destino
+    $("#scroller").scrollTo({ left, behavior: suave ? "smooth" : "auto" });
+    actualizarVisibles();
+  }
+
+  let navT;
+  function terminarNav() {
+    clearTimeout(navT);
+    if (!navObjetivo) return;
+    navObjetivo = null;
+    extenderSiHaceFalta();
+    actualizarVisibles();
+  }
+
+  function saltarMes(k) {
+    const base = mesDeDn(navObjetivo ? navObjetivo.n : diasVisibles().a);
+    const t = mesAdd(base.y, base.m, k);
+    irA(dn(iso(t.y, t.m, 1)), true);
+  }
+
+  function actualizarVisibles(forzar) {
+    const { a, b } = diasVisibles();
+    const p = mesDeDn(a), q = mesDeDn(b);
+    const key = `${p.y}-${p.m}|${q.y}-${q.m}`;
+    if (!forzar && key === visKey) return;
+    visKey = key;
+    renderMeses(p, q);
+  }
+
   /* ---------- render del calendario ---------- */
   function render() {
-    const { y, m } = view;
-    const N = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
-    const mStart = dn(iso(y, m, 1)), mEnd = mStart + N - 1;
+    renderTimeline();
+    actualizarVisibles(true);
+  }
+
+  function renderTimeline() {
+    const mStart = rangoIni(), mEnd = rangoFin(), N = mEnd - mStart + 1;
     const tl = $("#tl");
     tl.style.setProperty("--days", N);
-    const monthName = utc(iso(y, m, 1)).toLocaleDateString("es-UY", { month: "long", timeZone: "UTC" });
-    $("#monthTitle").textContent = `${monthName} ${y}`;
+    const dias = [];
+    for (let i = 0; i < N; i++) {
+      const s = fromDn(mStart + i), wd = utc(s).getUTCDay();
+      dias.push({ s, d: Number(s.slice(8)), cls: `${wd === 0 || wd === 6 ? " wk" : ""}${s.endsWith("-01") ? " month-start" : ""}`, wd });
+    }
 
     let html = `<div class="tl-row head"><div class="tl-label">Casa</div><div class="tl-cells">`;
-    for (let d = 1; d <= N; d++) {
-      const s = iso(y, m, d), wd = utc(s).getUTCDay();
-      html += `<div class="cell${wd === 0 || wd === 6 ? " wk" : ""}${s === todayISO ? " today" : ""}"><span>${WD[wd]}</span><b class="num">${d}</b></div>`;
+    for (const x of dias) {
+      html += `<div class="cell${x.cls}${x.s === todayISO ? " today" : ""}"><span>${WD[x.wd]}</span><b class="num">${x.d}</b></div>`;
     }
     html += `</div></div>`;
 
     const todayIdx = dn(todayISO) - mStart;
     for (const c of CASAS) {
       html += `<div class="tl-row"><div class="tl-label"><span class="swatch c-${c.id}"></span>${esc(c.nombre)}</div><div class="tl-cells">`;
-      for (let d = 1; d <= N; d++) {
-        const wd = utc(iso(y, m, d)).getUTCDay();
-        html += `<button class="cell${wd === 0 || wd === 6 ? " wk" : ""}" data-casa="${c.id}" data-dia="${iso(y, m, d)}" aria-label="Nueva reserva en ${esc(c.nombre)}, día ${d}"></button>`;
+      for (const x of dias) {
+        html += `<button class="cell${x.cls}" data-casa="${c.id}" data-dia="${x.s}" aria-label="Nueva reserva en ${esc(c.nombre)}, ${fmtCorto(x.s)}"></button>`;
       }
       if (todayIdx >= 0 && todayIdx < N) html += `<span class="today-line" style="left:${(todayIdx + 0.5) * CELL - 1}px"></span>`;
       for (const r of reservas.filter(r => r.casa === c.id)) {
@@ -151,8 +237,16 @@
       html += `</div></div>`;
     }
     tl.innerHTML = html;
+  }
 
-    // Resumen: noches ocupadas por casa en el mes
+  // Título, resumen y lista de los meses visibles (de p a q, inclusive)
+  function renderMeses(p, q) {
+    const fin = mesAdd(q.y, q.m, 1);
+    const mStart = dn(iso(p.y, p.m, 1)), mEnd = dn(iso(fin.y, fin.m, 1)) - 1, N = mEnd - mStart + 1;
+    const unMes = p.y === q.y && p.m === q.m;
+    $("#monthTitle").textContent = etiquetaMeses(p, q, true);
+
+    // Resumen: noches ocupadas por casa en los meses visibles
     $("#summary").innerHTML = CASAS.map(c => {
       let n = 0;
       for (const r of reservas.filter(r => r.casa === c.id)) {
@@ -162,10 +256,10 @@
       return `<div class="sum"><div class="n"><span class="swatch c-${c.id}"></span>${esc(c.nombre)}</div><div class="v num">${n}</div><div class="s">noches · ${Math.round(n / N * 100)}%</div></div>`;
     }).join("");
 
-    // Lista del mes
+    // Lista de los meses visibles
     const delMes = reservas.filter(r => dn(r.inicio) <= mEnd && dn(r.fin) > mStart)
-      .sort((p, q) => p.inicio.localeCompare(q.inicio));
-    $("#listTitle").textContent = `Reservas de ${utc(iso(y, m, 1)).toLocaleDateString("es-UY", { month: "long", timeZone: "UTC" })}`;
+      .sort((x, z) => x.inicio.localeCompare(z.inicio));
+    $("#listTitle").textContent = `Reservas de ${etiquetaMeses(p, q, false)}`;
     $("#list").innerHTML = delMes.length ? delMes.map(r => `
       <button class="item" data-id="${esc(r.id)}">
         <span class="stripe ${estadoPago(r).clase}"></span>
@@ -174,13 +268,11 @@
           <div class="item-payment ${estadoPago(r).clase}">${estadoPago(r).etiqueta} · ${saldoPendiente(r) == null ? "saldo sin calcular" : `falta ${money(saldoPendiente(r), r.moneda)}`}</div></span>
         <span class="amt num">${importe(r.total, r.moneda)}<small>${noches(r)} ${noches(r) === 1 ? "noche" : "noches"}</small></span>
       </button>`).join("")
-      : `<div class="empty">No hay reservas este mes. Tocá <b>Nueva reserva</b> o un día libre del calendario para cargar la primera.</div>`;
+      : `<div class="empty">No hay reservas ${unMes ? "este mes" : "en estos meses"}. Tocá <b>Nueva reserva</b> o un día libre del calendario para cargar la primera.</div>`;
   }
 
-  function scrollToToday() {
-    const sc = $("#scroller");
-    if (view.y !== now.getFullYear() || view.m !== now.getMonth()) { sc.scrollLeft = 0; return; }
-    sc.scrollLeft = Math.max(0, (now.getDate() - 3) * CELL);
+  function scrollToToday(suave) {
+    irA(dn(todayISO) - 2, suave);
   }
 
   /* ---------- hoja inferior ---------- */
@@ -295,8 +387,8 @@
       try {
         await guardar(data, pre.id);
         closeSheet();
-        const ini = dn(data.inicio), mS = dn(iso(view.y, view.m, 1)), mE = dn(iso(view.y, view.m + 1, 1)) - 1;
-        if (ini < mS || ini > mE) { const [yy, mm] = data.inicio.split("-").map(Number); view = { y: yy, m: mm - 1 }; render(); scrollToToday(); }
+        const ini = dn(data.inicio), vis = diasVisibles();
+        if (ini < vis.a || ini > vis.b) irA(ini - 2, true);
         toast(pre.id ? "Cambios guardados" : "Reserva guardada");
       } catch (ex) {
         f("formErr").textContent = mensajeError(ex); f("formErr").hidden = false;
@@ -466,9 +558,25 @@
     $("#overlay").addEventListener("click", closeSheet);
     $("#sheet").addEventListener("click", e => { if (e.target.closest("[data-close]")) closeSheet(); });
     document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("#sheet").hidden) closeSheet(); });
-    $("#prev").addEventListener("click", () => { view.m--; if (view.m < 0) { view.m = 11; view.y--; } render(); scrollToToday(); });
-    $("#next").addEventListener("click", () => { view.m++; if (view.m > 11) { view.m = 0; view.y++; } render(); scrollToToday(); });
-    $("#todayBtn").addEventListener("click", () => { view = { y: now.getFullYear(), m: now.getMonth() }; render(); scrollToToday(); });
+    $("#prev").addEventListener("click", () => saltarMes(-1));
+    $("#next").addEventListener("click", () => saltarMes(1));
+    $("#todayBtn").addEventListener("click", () => scrollToToday(true));
+    const sc = $("#scroller");
+    let rafPendiente = false;
+    sc.addEventListener("scroll", () => {
+      if (rafPendiente) return;
+      rafPendiente = true;
+      requestAnimationFrame(() => {
+        rafPendiente = false;
+        if (navObjetivo && Math.abs(sc.scrollLeft - navObjetivo.left) < 2) navObjetivo = null;
+        if (!navObjetivo) extenderSiHaceFalta();
+        actualizarVisibles();
+      });
+    }, { passive: true });
+    // Si la persona toca o usa la rueda durante un salto de mes, manda su scroll
+    ["pointerdown", "wheel", "touchstart"].forEach(ev => sc.addEventListener(ev, () => { navObjetivo = null; clearTimeout(navT); }, { passive: true }));
+    sc.addEventListener("scrollend", terminarNav);
+    window.addEventListener("resize", () => actualizarVisibles());
     $("#fab").addEventListener("click", () => openForm({ inicio: todayISO, fin: fromDn(dn(todayISO) + 1) }));
     $("#tl").addEventListener("click", e => {
       const bar = e.target.closest(".bar"); if (bar) return openDetail(bar.dataset.id);

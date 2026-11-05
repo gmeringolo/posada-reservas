@@ -21,6 +21,8 @@ create table if not exists public.reservas (
   senia         numeric(10,2),
   adultos       integer not null default 1 check (adultos >= 0),
   ninos         integer not null default 0 check (ninos >= 0),
+  mascotas      integer not null default 0 check (mascotas >= 0),
+  bloqueada     boolean not null default false,  -- true: fechas bloqueadas, sin huésped
   comentarios   text,
   creada        timestamptz not null default now(),
   actualizada   timestamptz not null default now(),
@@ -49,6 +51,10 @@ alter table public.reservas drop constraint if exists reservas_adultos_no_negati
 alter table public.reservas add constraint reservas_adultos_no_negativos check (adultos >= 0);
 alter table public.reservas drop constraint if exists reservas_ninos_no_negativos;
 alter table public.reservas add constraint reservas_ninos_no_negativos check (ninos >= 0);
+alter table public.reservas add column if not exists mascotas integer not null default 0;
+alter table public.reservas drop constraint if exists reservas_mascotas_no_negativas;
+alter table public.reservas add constraint reservas_mascotas_no_negativas check (mascotas >= 0);
+alter table public.reservas add column if not exists bloqueada boolean not null default false;
 alter table public.reservas drop constraint if exists reservas_senia_dentro_del_total;
 alter table public.reservas add constraint reservas_senia_dentro_del_total
   check (senia is null or (senia >= 0 and (total is null or senia <= total)));
@@ -86,6 +92,9 @@ begin
   if v_otro.casa <> p_datos->>'casa' or v_otro.casa = v_casa_original then
     raise exception 'La otra reserva ya no está en esa casa' using errcode = 'PH001';
   end if;
+  if v_otro.bloqueada or coalesce((p_datos->>'bloqueada')::boolean, false) then
+    raise exception 'Las fechas bloqueadas no se intercambian' using errcode = 'PH001';
+  end if;
 
   update public.reservas set
     casa         = p_datos->>'casa',
@@ -100,6 +109,7 @@ begin
     senia        = (p_datos->>'senia')::numeric,
     adultos      = (p_datos->>'adultos')::integer,
     ninos        = (p_datos->>'ninos')::integer,
+    mascotas     = coalesce((p_datos->>'mascotas')::integer, 0),
     comentarios  = p_datos->>'comentarios',
     actualizada  = now()
   where id = p_id;

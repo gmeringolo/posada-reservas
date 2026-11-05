@@ -74,6 +74,8 @@
     return { clase: "pay-unpaid", etiqueta: "Sin pagos" };
   };
   const saldoPendiente = r => r.total == null ? null : Math.max(0, Number(r.total) - (Number(r.senia) || 0));
+  // Fechas bloqueadas (casa no disponible, sin huésped): barra gris, no cuentan en los totales
+  const textoBloqueo = r => (r.comentarios || "").split("\n")[0].trim() || "Bloqueado";
   const calcularResumenPeriodo = (inicio, fin, lista) => {
     const desde = dn(inicio), hasta = dn(fin) + 1;
     const resumen = {
@@ -82,6 +84,7 @@
       nochesPorCasa: Object.fromEntries(CASAS.map(c => [c.id, 0]))
     };
     for (const reserva of lista) {
+      if (reserva.bloqueada) continue;
       const nochesTotales = noches(reserva);
       if (nochesTotales <= 0) continue;
       const nochesEnPeriodo = Math.max(0, Math.min(dn(reserva.fin), hasta) - Math.max(dn(reserva.inicio), desde));
@@ -106,13 +109,15 @@
     senia: r.senia == null ? null : Number(r.senia),
     adultos: Number(r.adultos ?? 1),
     ninos: Number(r.ninos ?? 0),
+    mascotas: Number(r.mascotas ?? 0),
+    bloqueada: !!r.bloqueada,
     comentarios: r.comentarios || ""
   });
   const toRow = d => ({
     casa: d.casa, inicio: d.inicio, fin: d.fin,
     nombre: d.nombre, apellido: d.apellido || null, telefono: d.telefono,
     moneda: d.moneda, precio_noche: d.precioNoche, total: d.total, senia: d.senia,
-    adultos: d.adultos, ninos: d.ninos, comentarios: d.comentarios || null
+    adultos: d.adultos, ninos: d.ninos, mascotas: d.mascotas, bloqueada: !!d.bloqueada, comentarios: d.comentarios || null
   });
 
   /* ---------- rango y meses visibles ---------- */
@@ -228,8 +233,13 @@
         const left = a >= mStart ? (a - mStart + 0.5) * CELL + 2 : 0;
         const right = b <= mEnd ? (b - mStart + 0.5) * CELL - 2 : N * CELL;
         if (right - left < 6) continue;
+        const corte = `${a < mStart ? " cut-l" : ""}${b > mEnd ? " cut-r" : ""}`;
+        if (r.bloqueada) {
+          html += `<button class="bar blocked${corte}" data-id="${esc(r.id)}" style="left:${left}px;width:${right - left}px" title="${esc(`Fechas bloqueadas${r.comentarios ? ` · ${r.comentarios}` : ""}`)}">${esc(textoBloqueo(r))}</button>`;
+          continue;
+        }
         const estado = estadoPago(r);
-        const cls = `bar ${estado.clase}${a < mStart ? " cut-l" : ""}${b > mEnd ? " cut-r" : ""}`;
+        const cls = `bar ${estado.clase}${corte}`;
         const huesped = [r.nombre, r.apellido].filter(Boolean).join(" ");
         const saldo = saldoPendiente(r);
         html += `<button class="${cls}" data-id="${esc(r.id)}" style="left:${left}px;width:${right - left}px" title="${esc(`${huesped} · ${estado.etiqueta} · ${saldo == null ? "saldo sin calcular" : `falta ${money(saldo, r.moneda)}`}`)}">${esc(r.nombre)}${r.apellido ? ` ${esc(r.apellido.charAt(0))}.` : ""}</button>`;
@@ -249,7 +259,7 @@
     // Resumen: noches ocupadas por casa en los meses visibles
     $("#summary").innerHTML = CASAS.map(c => {
       let n = 0;
-      for (const r of reservas.filter(r => r.casa === c.id)) {
+      for (const r of reservas.filter(r => r.casa === c.id && !r.bloqueada)) {
         const a = Math.max(dn(r.inicio), mStart), b = Math.min(dn(r.fin), mEnd + 1);
         if (b > a) n += b - a;
       }
@@ -260,11 +270,17 @@
     const delMes = reservas.filter(r => dn(r.inicio) <= mEnd && dn(r.fin) > mStart)
       .sort((x, z) => x.inicio.localeCompare(z.inicio));
     $("#listTitle").textContent = `Reservas de ${etiquetaMeses(p, q, false)}`;
-    $("#list").innerHTML = delMes.length ? delMes.map(r => `
+    $("#list").innerHTML = delMes.length ? delMes.map(r => r.bloqueada ? `
+      <button class="item" data-id="${esc(r.id)}">
+        <span class="stripe blocked"></span>
+        <span style="min-width:0"><div class="who">Fechas bloqueadas</div>
+          <div class="when num">${esc(casaById[r.casa]?.nombre || "")} · ${fmtCorto(r.inicio)} → ${fmtCorto(r.fin)}${r.comentarios ? ` · ${esc(textoBloqueo(r))}` : ""}</div></span>
+        <span class="amt num"><small>${noches(r)} ${noches(r) === 1 ? "noche" : "noches"}</small></span>
+      </button>` : `
       <button class="item" data-id="${esc(r.id)}">
         <span class="stripe ${estadoPago(r).clase}"></span>
         <span style="min-width:0"><div class="who">${esc([r.nombre, r.apellido].filter(Boolean).join(" "))}</div>
-          <div class="when num">${esc(casaById[r.casa]?.nombre || "")} · ${fmtCorto(r.inicio)} → ${fmtCorto(r.fin)} · ${r.adultos} ${r.adultos === 1 ? "adulto" : "adultos"} · ${r.ninos} ${r.ninos === 1 ? "niño" : "niños"}</div>
+          <div class="when num">${esc(casaById[r.casa]?.nombre || "")} · ${fmtCorto(r.inicio)} → ${fmtCorto(r.fin)} · ${r.adultos} ${r.adultos === 1 ? "adulto" : "adultos"} · ${r.ninos} ${r.ninos === 1 ? "niño" : "niños"}${r.mascotas ? ` · ${r.mascotas} ${r.mascotas === 1 ? "mascota" : "mascotas"}` : ""}</div>
           <div class="item-payment ${estadoPago(r).clase}">${estadoPago(r).etiqueta} · ${saldoPendiente(r) == null ? "saldo sin calcular" : `falta ${money(saldoPendiente(r), r.moneda)}`}</div></span>
         <span class="amt num">${importe(r.total, r.moneda)}<small>${noches(r)} ${noches(r) === 1 ? "noche" : "noches"}</small></span>
       </button>`).join("")
@@ -288,8 +304,9 @@
   }
 
   function openForm(pre = {}) {
-    const r = Object.assign({ casa: CASAS[0]?.id, inicio: "", fin: "", nombre: "", apellido: "", telefono: "", moneda: "UYU", precioNoche: "", total: "", senia: null, adultos: 1, ninos: 0 }, pre);
+    const r = Object.assign({ casa: CASAS[0]?.id, inicio: "", fin: "", nombre: "", apellido: "", telefono: "", moneda: "UYU", precioNoche: "", total: "", senia: null, adultos: 1, ninos: 0, mascotas: 0, bloqueada: false }, pre);
     const editing = !!pre.id;
+    if (r.bloqueada) Object.assign(r, { nombre: "", apellido: "", telefono: "", adultos: 1, ninos: 0, mascotas: 0 });
     const telefonoParts = separarTelefono(r.telefono);
     openSheet(`
       <h3 id="sheetTitle">${editing ? "Editar reserva" : "Nueva reserva"} ${closeBtn}</h3>
@@ -302,28 +319,30 @@
           <div class="fld"><label for="fin">Salida *</label><input type="date" id="fin" value="${esc(r.fin)}" required></div>
         </div>
         <div class="nights num" id="nightsInfo"></div>
-        <div class="two">
+        <div class="two solo-reserva">
           <div class="fld"><label for="nombre">Nombre *</label><input id="nombre" autocomplete="off" value="${esc(r.nombre)}" required></div>
           <div class="fld"><label for="apellido">Apellido</label><input id="apellido" autocomplete="off" value="${esc(r.apellido)}"></div>
         </div>
-        <div class="two">
+        <div class="people solo-reserva">
           <div class="fld"><label for="adultos">Adultos</label><input id="adultos" type="number" inputmode="numeric" min="0" step="1" value="${esc(r.adultos)}" required></div>
           <div class="fld"><label for="ninos">Niños</label><input id="ninos" type="number" inputmode="numeric" min="0" step="1" value="${esc(r.ninos)}" required></div>
+          <div class="fld"><label for="mascotas">Mascotas</label><input id="mascotas" type="number" inputmode="numeric" min="0" step="1" value="${esc(r.mascotas)}" required></div>
         </div>
-        <div class="phone-fields">
+        <div class="phone-fields solo-reserva">
           <div class="fld"><label for="codigoPais">País</label><select id="codigoPais">${CODIGOS_PAIS.map(p => `<option value="${p.codigo}" ${telefonoParts.codigo === p.codigo ? "selected" : ""}>${p.pais} ${p.codigo}</option>`).join("")}</select></div>
           <div class="fld"><label for="telefono">Número *</label><input id="telefono" type="tel" inputmode="tel" placeholder="99 123 456" value="${esc(telefonoParts.numero)}" required></div>
         </div>
-        <div class="three">
+        <div class="three solo-reserva">
           <div class="fld"><label for="moneda">Moneda</label><select id="moneda"><option value="USD" ${r.moneda === "USD" ? "selected" : ""}>US$</option><option value="UYU" ${r.moneda === "UYU" ? "selected" : ""}>$U</option></select></div>
           <div class="fld"><label for="precio">Por noche</label><input id="precio" type="number" inputmode="decimal" min="0" step="any" class="num" value="${r.precioNoche == null ? "" : esc(r.precioNoche)}"></div>
           <div class="fld"><label for="total">Total</label><input id="total" type="number" inputmode="decimal" min="0" step="any" class="num" value="${r.total == null ? "" : esc(r.total)}"></div>
         </div>
-        <div class="two">
-          <div class="fld"><label for="senia">Seña pagada</label><input id="senia" type="number" inputmode="decimal" min="0" step="0.01" class="num" value="${r.senia == null ? "" : esc(r.senia)}"></div>
-          <div class="fld"><span class="lbl">Estado y saldo</span><div class="payment-summary" id="paymentSummary"><strong id="paymentStatus"></strong><small id="paymentBalance"></small></div></div>
+        <div class="pay-row">
+          <div class="fld solo-reserva"><label for="senia">Seña pagada</label><input id="senia" type="number" inputmode="decimal" min="0" step="0.01" class="num" value="${r.senia == null ? "" : esc(r.senia)}"></div>
+          <div class="fld solo-reserva"><span class="lbl">Estado y saldo</span><div class="payment-summary" id="paymentSummary"><strong id="paymentStatus"></strong><small id="paymentBalance"></small></div></div>
+          <div class="fld"><span class="lbl">Bloqueo</span><button type="button" class="block-toggle" id="blockBtn" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg><span id="blockTxt">Bloquear fechas</span></button></div>
         </div>
-        <div class="fld"><label for="comentarios">Comentarios</label><textarea id="comentarios" rows="3">${esc(r.comentarios)}</textarea></div>
+        <div class="fld"><label for="comentarios" id="comentariosLbl">Comentarios</label><textarea id="comentarios" rows="3">${esc(r.comentarios)}</textarea></div>
         <div class="err" id="formErr" hidden></div>
         <div class="notice" id="formSwap" hidden></div>
         <div class="actions">
@@ -368,23 +387,49 @@
     f("senia").addEventListener("input", actualizarPago);
     recalc();
 
+    // Bloqueo de fechas: oculta los datos de huésped y pago
+    let bloqueada = !!r.bloqueada;
+    const textoGuardar = () => bloqueada ? "Guardar bloqueo" : editing ? "Guardar cambios" : "Guardar reserva";
+
     // Intercambio de casas pendiente de confirmar (id de la otra reserva)
-    const textoGuardar = editing ? "Guardar cambios" : "Guardar reserva";
     let intercambioPendiente = null;
     const cancelarIntercambio = () => {
       if (!intercambioPendiente) return;
       intercambioPendiente = null;
       f("formSwap").hidden = true;
-      f("saveBtn").textContent = textoGuardar;
+      f("saveBtn").textContent = textoGuardar();
     };
     // Si se cambia cualquier dato, hay que volver a confirmar
     ["input", "change"].forEach(ev => f("form").addEventListener(ev, cancelarIntercambio));
 
+    const aplicarBloqueo = () => {
+      f("form").classList.toggle("bloqueo", bloqueada);
+      f("blockBtn").setAttribute("aria-pressed", String(bloqueada));
+      f("blockTxt").textContent = bloqueada ? "Desbloquear" : "Bloquear fechas";
+      f("sheetTitle").firstChild.textContent = (bloqueada ? (editing ? "Editar bloqueo" : "Bloquear fechas") : (editing ? "Editar reserva" : "Nueva reserva")) + " ";
+      f("comentariosLbl").textContent = bloqueada ? "Motivo (opcional)" : "Comentarios";
+      f("saveBtn").textContent = textoGuardar();
+    };
+    f("blockBtn").addEventListener("click", () => {
+      bloqueada = !bloqueada;
+      cancelarIntercambio();
+      f("formErr").hidden = true;
+      aplicarBloqueo();
+    });
+    aplicarBloqueo();
+
     f("form").addEventListener("submit", async e => {
       e.preventDefault();
-      const data = {
+      const data = bloqueada ? {
+        // Bloqueo: sin huésped ni importes
         casa: document.querySelector('input[name="casa"]:checked')?.value,
-        inicio: f("inicio").value, fin: f("fin").value,
+        inicio: f("inicio").value, fin: f("fin").value, bloqueada: true,
+        nombre: "Bloqueado", apellido: "", telefono: "", moneda: f("moneda").value,
+        precioNoche: null, total: null, senia: null, adultos: 0, ninos: 0, mascotas: 0,
+        comentarios: f("comentarios").value.trim()
+      } : {
+        casa: document.querySelector('input[name="casa"]:checked')?.value,
+        inicio: f("inicio").value, fin: f("fin").value, bloqueada: false,
         nombre: f("nombre").value.trim(), apellido: f("apellido").value.trim(),
         telefono: telefonoInternacional(f("codigoPais").value, f("telefono").value), moneda: f("moneda").value,
         precioNoche: f("precio").value === "" ? null : Number(f("precio").value),
@@ -392,6 +437,7 @@
         senia: f("senia").value === "" ? null : Number(f("senia").value),
         adultos: f("adultos").value === "" ? null : Number(f("adultos").value),
         ninos: f("ninos").value === "" ? null : Number(f("ninos").value),
+        mascotas: f("mascotas").value === "" ? null : Number(f("mascotas").value),
         comentarios: f("comentarios").value.trim()
       };
       f("formErr").hidden = true;
@@ -417,10 +463,10 @@
         closeSheet();
         const ini = dn(data.inicio), vis = diasVisibles();
         if (ini < vis.a || ini > vis.b) irA(ini - 2, true);
-        toast(otra ? "Casas intercambiadas" : pre.id ? "Cambios guardados" : "Reserva guardada");
+        toast(otra ? "Casas intercambiadas" : bloqueada ? (pre.id ? "Bloqueo guardado" : "Fechas bloqueadas") : pre.id ? "Cambios guardados" : "Reserva guardada");
       } catch (ex) {
         f("formErr").textContent = mensajeError(ex); f("formErr").hidden = false;
-        f("saveBtn").disabled = false; f("saveBtn").textContent = intercambioPendiente ? "Intercambiar casas" : textoGuardar;
+        f("saveBtn").disabled = false; f("saveBtn").textContent = intercambioPendiente ? "Intercambiar casas" : textoGuardar();
       }
     });
   }
@@ -429,6 +475,7 @@
     if (!d.casa) return "Elegí una casa.";
     if (!d.inicio || !d.fin) return "Completá la fecha de entrada y la de salida.";
     if (dn(d.fin) <= dn(d.inicio)) return "La salida tiene que ser al menos un día después de la entrada.";
+    if (d.bloqueada) return null; // un bloqueo no lleva huésped ni importes
     if (!d.nombre) return "Completá el nombre del huésped.";
     if (!d.telefono) return "Completá el teléfono del huésped.";
     if (d.precioNoche !== null && (!Number.isFinite(d.precioNoche) || d.precioNoche <= 0)) return "El precio por noche debe ser mayor que cero.";
@@ -437,6 +484,7 @@
     if (d.senia !== null && d.total !== null && d.senia > d.total) return "La seña no puede ser mayor que el total de la estadía.";
     if (!Number.isInteger(d.adultos) || d.adultos < 0) return "Ingresá una cantidad válida de adultos.";
     if (!Number.isInteger(d.ninos) || d.ninos < 0) return "Ingresá una cantidad válida de niños.";
+    if (!Number.isInteger(d.mascotas) || d.mascotas < 0) return "Ingresá una cantidad válida de mascotas.";
     return null;
   }
 
@@ -446,11 +494,11 @@
   // Reservas de esa casa que se pisan con las fechas dadas (sin contar las de "excluir")
   const choquesEn = (casa, inicio, fin, excluir) =>
     reservas.filter(o => !excluir.includes(o.id) && o.casa === casa && dn(inicio) < dn(o.fin) && dn(fin) > dn(o.inicio));
-  // "<b>Juan Pérez</b> durante las noches del 10 nov al 14 nov"
+  // "<b>Juan Pérez</b> durante las noches del 10 nov al 14 nov" (o "un <b>bloqueo</b> durante…")
   const detalleChoque = (o, inicio, fin) => {
     const desdeN = Math.max(dn(inicio), dn(o.inicio)), hastaN = Math.min(dn(fin), dn(o.fin));
     const desde = fmtCorto(fromDn(desdeN)), hasta = fmtCorto(fromDn(hastaN - 1));
-    return `<b>${esc(huespedDe(o))}</b> durante ${hastaN - desdeN === 1 ? "la noche" : "las noches"} del ${desde}${desde === hasta ? "" : ` al ${hasta}`}`;
+    return `${o.bloqueada ? "un <b>bloqueo</b>" : `<b>${esc(huespedDe(o))}</b>`} durante ${hastaN - desdeN === 1 ? "la noche" : "las noches"} del ${desde}${desde === hasta ? "" : ` al ${hasta}`}`;
   };
   const listaChoques = (choques, inicio, fin) => choques.map(o => detalleChoque(o, inicio, fin)).join(", y por ");
 
@@ -463,14 +511,15 @@
     if (!choques.length) return null;
     const original = id ? reservas.find(o => o.id === id) : null;
     const otra = choques.length === 1 ? choques[0] : null;
-    if (original && otra && original.casa !== d.casa) {
+    // Los bloqueos no se intercambian: solo reservas con huésped
+    if (original && otra && original.casa !== d.casa && !d.bloqueada && !otra.bloqueada) {
       const bloqueos = choquesEn(original.casa, otra.inicio, otra.fin, [id, otra.id]);
       if (bloqueos.length) {
         return { error: `No se pueden intercambiar las casas: para que <b>${esc(huespedDe(otra))}</b> pase a ${nombreCasa(original.casa)} (${fmtCorto(otra.inicio)} → ${fmtCorto(otra.fin)}), esa casa tiene que estar libre, pero está ocupada por ${listaChoques(bloqueos, otra.inicio, otra.fin)}. Elegí otra casa o cambiá las fechas.` };
       }
       return { intercambio: otra, casaOriginal: original.casa };
     }
-    return { error: `No se puede ${id ? "cambiar a" : "reservar en"} ${nombreCasa(d.casa)}: ya está ocupada por ${listaChoques(choques, d.inicio, d.fin)}. Elegí otra casa o cambiá las fechas.` };
+    return { error: `No se puede ${d.bloqueada ? "bloquear" : id ? "cambiar a" : "reservar en"} ${nombreCasa(d.casa)}: ya está ocupada por ${listaChoques(choques, d.inicio, d.fin)}. Elegí otra casa o cambiá las fechas.` };
   }
 
   function openDetail(id) {
@@ -479,7 +528,22 @@
     const telefono = normalizarTelefonoGuardado(r.telefono);
     const tel = telefono.replace(/\D/g, "");
     const wa = tel ? "https://wa.me/" + tel : "";
-    openSheet(`
+    if (r.bloqueada) openSheet(`
+      <h3 id="sheetTitle">Fechas bloqueadas ${closeBtn}</h3>
+      <div class="detail">
+        <div class="drow"><span>Casa</span><span class="tag"><span class="swatch c-${r.casa}"></span>${esc(casaById[r.casa]?.nombre || "")}</span></div>
+        <div class="drow"><span>Desde</span><span class="num">${fmtLargo(r.inicio)}</span></div>
+        <div class="drow"><span>Hasta</span><span class="num">${fmtLargo(r.fin)}</span></div>
+        <div class="drow"><span>Noches</span><span class="num">${noches(r)}</span></div>
+        ${r.comentarios ? `<div class="drow"><span>Motivo</span><span class="comments-text">${esc(r.comentarios).replace(/\n/g, "<br>")}</span></div>` : ""}
+        <div class="drow"><span>Estado</span><span class="payment-badge blocked">Bloqueado</span></div>
+      </div>
+      <div class="err" id="detErr" hidden></div>
+      <div class="actions">
+        <button type="button" class="btn danger" id="delBtn">Eliminar</button>
+        <button type="button" class="btn primary" id="editBtn">Editar</button>
+      </div>`);
+    else openSheet(`
       <h3 id="sheetTitle">${esc([r.nombre, r.apellido].filter(Boolean).join(" "))} ${closeBtn}</h3>
       <div class="detail">
         <div class="drow"><span>Casa</span><span class="tag"><span class="swatch c-${r.casa}"></span>${esc(casaById[r.casa]?.nombre || "")}</span></div>
@@ -488,6 +552,7 @@
         <div class="drow"><span>Noches</span><span class="num">${noches(r)}</span></div>
         <div class="drow"><span>Adultos</span><span class="num">${r.adultos}</span></div>
         <div class="drow"><span>Niños</span><span class="num">${r.ninos}</span></div>
+        <div class="drow"><span>Mascotas</span><span class="num">${r.mascotas}</span></div>
         ${r.comentarios ? `<div class="drow"><span>Comentarios</span><span class="comments-text">${esc(r.comentarios).replace(/\n/g, "<br>")}</span></div>` : ""}
         <div class="drow"><span>Por noche</span><span class="num">${importe(r.precioNoche, r.moneda)}</span></div>
         <div class="drow"><span>Total</span><span class="num">${importe(r.total, r.moneda)}</span></div>
@@ -510,7 +575,7 @@
     del.addEventListener("click", async () => {
       if (!del.classList.contains("armed")) { del.classList.add("armed"); del.textContent = "Tocá de nuevo para eliminar"; return; }
       del.disabled = true; del.textContent = "Eliminando…";
-      try { await eliminar(r.id); closeSheet(); toast("Reserva eliminada"); }
+      try { await eliminar(r.id); closeSheet(); toast(r.bloqueada ? "Bloqueo eliminado" : "Reserva eliminada"); }
       catch (ex) { $("#detErr").textContent = mensajeError(ex); $("#detErr").hidden = false; del.disabled = false; del.textContent = "Eliminar"; del.classList.remove("armed"); }
     });
   }
@@ -563,6 +628,7 @@
     if (code === "42501") return "Supabase rechazó el guardado por permisos de la base de datos. Hay que actualizar los permisos ejecutando de nuevo el archivo supabase.sql; no significa que hayas ingresado mal.";
     if (code === "PGRST301") return "La sesión de acceso venció o no es válida. Tocá Salir e ingresá de nuevo.";
     if (code === "23514") return "Algún dato no es válido (fechas, casa o moneda). Revisá el formulario.";
+    if (code === "PGRST204") return "Falta actualizar la base de datos (por ejemplo, los campos de mascotas o de bloqueo): ejecutá de nuevo el archivo supabase.sql en Supabase.";
     if (code === "PGRST202") return "Falta actualizar la base de datos para poder intercambiar casas: ejecutá de nuevo el archivo supabase.sql en Supabase.";
     if (code === "PH001") return "No se pudo intercambiar porque la otra reserva cambió mientras tanto. Cerrá, revisá el calendario e intentá de nuevo.";
     return "No se pudo guardar. Revisá tu conexión e intentá de nuevo." + (ex?.message ? ` (${ex.message})` : "");

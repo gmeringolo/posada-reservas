@@ -269,6 +269,7 @@
     const mStart = dn(iso(p.y, p.m, 1)), mEnd = dn(iso(fin.y, fin.m, 1)) - 1, N = mEnd - mStart + 1;
     const unMes = p.y === q.y && p.m === q.m;
     $("#monthTitle").textContent = etiquetaMeses(p, q, true);
+    $("#summaryTitle").textContent = `Ocupación de ${etiquetaMeses(p, q, false)}`;
 
     // Resumen: noches ocupadas por casa en los meses visibles
     $("#summary").innerHTML = CASAS.map(c => {
@@ -280,25 +281,43 @@
       return `<div class="sum"><div class="n"><span class="swatch c-${c.id}"></span>${esc(c.nombre)}</div><div class="v num">${n}</div><div class="s">noches · ${Math.round(n / N * 100)}%</div></div>`;
     }).join("");
 
-    // Lista de los meses visibles
-    const delMes = reservas.filter(r => dn(r.inicio) <= mEnd && dn(r.fin) > mStart)
+    // Lista de los meses visibles: solo las que se están hospedando ahora y las próximas
+    // (las que ya se retiraron no aparecen; las que salen hoy sí, hasta mañana)
+    const hoy = dn(todayISO);
+    // Las fechas bloqueadas no se listan: solo se ven en gris en el calendario
+    const delMes = reservas.filter(r => !r.bloqueada && dn(r.inicio) <= mEnd && dn(r.fin) > mStart && dn(r.fin) >= hoy)
       .sort((x, z) => x.inicio.localeCompare(z.inicio));
     $("#listTitle").textContent = `Reservas de ${etiquetaMeses(p, q, false)}`;
-    $("#list").innerHTML = delMes.length ? delMes.map(r => r.bloqueada ? `
-      <button class="item" data-id="${esc(r.id)}">
-        <span class="stripe blocked"></span>
-        <span style="min-width:0"><div class="who">Fechas bloqueadas</div>
-          <div class="when num">${esc(casaById[r.casa]?.nombre || "")} · ${fmtCorto(r.inicio)} → ${fmtCorto(r.fin)}${r.comentarios ? ` · ${esc(textoBloqueo(r))}` : ""}</div></span>
-        <span class="amt num"><small>${noches(r)} ${noches(r) === 1 ? "noche" : "noches"}</small></span>
-      </button>` : `
-      <button class="item" data-id="${esc(r.id)}">
+    $("#list").innerHTML = delMes.length ? delMes.map(r => `
+      <button class="item${aviso(r) ? " has-flag" : ""}" data-id="${esc(r.id)}">${aviso(r)}
         <span class="stripe ${estadoPago(r).clase}"></span>
-        <span style="min-width:0"><div class="who">${esc([r.nombre, r.apellido].filter(Boolean).join(" "))}</div>
+        <span style="min-width:0"><div class="who"><span class="nm">${esc([r.nombre, r.apellido].filter(Boolean).join(" "))}</span>${etiquetaEstadia(r)}</div>
           <div class="when num">${esc(casaById[r.casa]?.nombre || "")} · ${fmtCorto(r.inicio)} → ${fmtCorto(r.fin)} · ${r.adultos} ${r.adultos === 1 ? "adulto" : "adultos"} · ${r.ninos} ${r.ninos === 1 ? "niño" : "niños"}${r.mascotas ? ` · ${r.mascotas} ${r.mascotas === 1 ? "mascota" : "mascotas"}` : ""}</div>
           <div class="item-payment ${estadoPago(r).clase}">${estadoPago(r).etiqueta} · ${saldoPendiente(r) == null ? "saldo sin calcular" : `falta ${money(saldoPendiente(r), r.moneda)}`}</div></span>
         <span class="amt num">${importe(r.total, r.moneda)}<small>${noches(r)} ${noches(r) === 1 ? "noche" : "noches"}</small></span>
       </button>`).join("")
-      : `<div class="empty">No hay reservas ${unMes ? "este mes" : "en estos meses"}. Tocá <b>Nueva reserva</b> o un día libre del calendario para cargar la primera.</div>`;
+      : `<div class="empty">No hay reservas actuales ni próximas en ${unMes ? "este mes" : "estos meses"}. Tocá <b>Nueva reserva</b> o un día libre del calendario para cargar una.</div>`;
+  }
+
+  // Avisos de entrada y salida: ingresa hoy / mañana, se retira hoy / mañana
+  // (una estadía de una noche que empieza hoy lleva los dos: "Ingresa hoy" y "Se retira mañana")
+  function avisosDelDia(r) {
+    const hoy = dn(todayISO), a = dn(r.inicio), b = dn(r.fin), lista = [];
+    if (a === hoy) lista.push("Ingresa hoy");
+    else if (a === hoy + 1) lista.push("Ingresa mañana");
+    if (b === hoy) lista.push("Se retira hoy");
+    else if (b === hoy + 1) lista.push("Se retira mañana");
+    return lista;
+  }
+  // Etiqueta junto al nombre para quien ya estaba hospedado y no se retira todavía
+  const etiquetaEstadia = r => {
+    const hoy = dn(todayISO);
+    return dn(r.inicio) < hoy && dn(r.fin) > hoy + 1 ? `<span class="stay-tag">Hospedado</span>` : "";
+  };
+  // Avisos en la esquina de la tarjeta, con el color de la casa
+  function aviso(r) {
+    const lista = avisosDelDia(r);
+    return lista.length ? `<span class="flags">${lista.map(t => `<span class="flag c-${r.casa}">${t}</span>`).join("")}</span>` : "";
   }
 
   function scrollToToday(suave) {
@@ -354,7 +373,7 @@
         </div>
         <div class="pay-row">
           <div class="fld solo-reserva"><label for="senia">Seña pagada</label><input id="senia" type="number" inputmode="decimal" min="0" step="0.01" class="num" value="${r.senia == null ? "" : esc(r.senia)}"></div>
-          <div class="fld solo-reserva"><span class="lbl">Estado y saldo</span><div class="payment-summary" id="paymentSummary"><strong id="paymentStatus"></strong><small id="paymentBalance"></small></div></div>
+          <div class="fld solo-reserva"><span class="lbl">Estado</span><div class="payment-summary" id="paymentSummary"><strong id="paymentStatus"></strong></div></div>
           <div class="fld"><span class="lbl">Bloqueo</span><button type="button" class="block-toggle" id="blockBtn" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg><span id="blockTxt">Bloquear fechas</span></button></div>
         </div>
         <div class="fld"><label for="comentarios" id="comentariosLbl">Comentarios</label><textarea id="comentarios" rows="3">${esc(r.comentarios)}</textarea></div>
@@ -377,7 +396,6 @@
       const excedeTotal = senia !== null && total !== null && senia > total;
       f("paymentSummary").className = `payment-summary ${excedeTotal ? "pay-unpaid" : estado.clase}`;
       f("paymentStatus").textContent = excedeTotal ? "La seña supera el total" : estado.etiqueta;
-      f("paymentBalance").textContent = total !== null ? `Falta pagar: ${money(Math.max(0, total - (senia || 0)), f("moneda").value)}` : "Completá el total para calcular el saldo";
     };
     const recalc = () => {
       const a = f("inicio").value, b = f("fin").value;
@@ -680,7 +698,13 @@
         if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") setStatus("Guardado en línea · actualizá la página para ver cambios de la otra persona", true);
       });
     // Al volver a la app (por ej. desde WhatsApp), recargar por si hubo cambios
-    document.addEventListener("visibilitychange", () => { if (!document.hidden) cargar(); });
+    // Si cambió el día (la app quedó abierta de un día para otro), recargar para actualizar "hoy"
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) return;
+      const d = new Date();
+      if (iso(d.getFullYear(), d.getMonth(), d.getDate()) !== todayISO) location.reload();
+      else cargar();
+    });
   }
 
   /* ---------- eventos ---------- */

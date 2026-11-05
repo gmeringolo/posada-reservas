@@ -79,7 +79,7 @@ header.top{position:sticky;top:0;z-index:5;background:var(--bg);
 .hint{font-size:12.5px;color:var(--muted);margin:8px 2px 0}
 
 /* Resumen */
-.summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:18px}
+.summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
 .sum{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:10px 10px 9px;min-width:0}
 .sum .n{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:var(--muted);overflow:hidden;white-space:nowrap}
 .sum .v{font-family:var(--f-display);font-size:20px;font-weight:700;line-height:1.2;margin-top:2px}
@@ -89,9 +89,17 @@ header.top{position:sticky;top:0;z-index:5;background:var(--bg);
 h2{font-family:var(--f-display);font-weight:700;font-size:19px;margin:26px 0 10px;text-wrap:balance}
 .list{display:flex;flex-direction:column;gap:8px}
 .item{display:grid;grid-template-columns:6px 1fr auto;gap:12px;align-items:center;width:100%;text-align:left;background:var(--surface);
-  border:1px solid var(--line);border-radius:12px;padding:12px 12px 12px 0;overflow:hidden}
-.item .stripe{align-self:stretch;margin:-12px 0}
-.item .who{font-weight:700;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  border:1px solid var(--line);border-radius:12px;padding:12px 12px 12px 0;position:relative}
+.item .stripe{align-self:stretch;margin:-12px 0;border-radius:11px 0 0 11px}
+/* Avisos "Ingresa / Se retira hoy o mañana": sobre el borde superior derecho, con el color de la casa */
+.flags{position:absolute;top:0;right:16px;transform:translateY(-50%);display:flex;gap:6px;pointer-events:none}
+.flag{padding:2px 12px;border-radius:999px;font-size:12px;font-weight:400;line-height:1.4;color:#fff;white-space:nowrap}
+.item.has-flag{margin-top:6px}
+.item .who{font-weight:700;min-width:0;display:flex;align-items:center;gap:6px}
+.item .who .nm{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* Etiqueta de estadía: hospedado ahora / se retira mañana / se retira hoy */
+.stay-tag{flex:none;font-size:11px;font-weight:700;line-height:1.5;padding:0 7px;border-radius:999px;white-space:nowrap;
+  background:color-mix(in srgb, var(--accent) 16%, transparent);color:var(--accent)}
 .item .when{font-size:13px;color:var(--muted)}
 .item .item-payment{font-size:11px;font-weight:700;margin-top:2px;background:transparent}
 .item .item-payment.pay-unpaid{color:var(--pay-unpaid)!important}
@@ -127,13 +135,15 @@ h2{font-family:var(--f-display);font-weight:700;font-size:19px;margin:26px 0 10p
 /* Hoja inferior */
 .overlay{position:fixed;inset:0;background:var(--overlay);z-index:20}
 .sheet{position:fixed;left:0;right:0;bottom:0;z-index:21;background:var(--surface);border-radius:20px 20px 0 0;
-  max-height:92%;overflow-y:auto;padding-top:8px;padding-bottom:calc(96px + env(safe-area-inset-bottom,0px));
+  max-height:92%;overflow-y:auto;padding-top:8px;padding-bottom:calc(16px + env(safe-area-inset-bottom,0px));
   padding-left:max(18px, env(safe-area-inset-left,0px));padding-right:max(18px, env(safe-area-inset-right,0px));
   max-width:560px;margin:0 auto;animation:up .22s ease-out}
 @keyframes up{from{transform:translateY(24px);opacity:.6}to{transform:none;opacity:1}}
 @media (prefers-reduced-motion:reduce){.sheet{animation:none}}
 .grab{width:40px;height:4px;border-radius:2px;background:var(--line);margin:0 auto 10px}
-.sheet h3{font-family:var(--f-display);font-size:22px;margin:0 0 14px;display:flex;justify-content:space-between;align-items:center;gap:8px}
+/* Título y botón de cerrar fijos arriba: el resto de la hoja se desplaza por debajo */
+.sheet h3{font-family:var(--f-display);font-size:22px;margin:-8px -18px 14px;padding:12px 18px 10px;display:flex;justify-content:space-between;align-items:center;gap:8px;
+  position:sticky;top:-8px;z-index:4;background:var(--surface);border-bottom:1px solid var(--line)}
 .close{border:0;background:transparent;width:36px;height:36px;border-radius:10px;display:grid;place-items:center;color:var(--muted);flex:none}
 
 form{display:flex;flex-direction:column;gap:14px}
@@ -145,7 +155,7 @@ form{display:flex;flex-direction:column;gap:14px}
 .two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .people{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
 .pay-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto;gap:10px}
-.block-toggle{display:flex;align-items:center;gap:6px;min-height:46px;max-width:112px;padding:6px 10px;border-radius:11px;border:1px solid var(--line);
+.block-toggle{display:flex;align-items:center;gap:6px;height:46px;max-width:112px;padding:0 10px;border-radius:11px;border:1px solid var(--line);
   background:var(--surface);color:var(--ink);font:inherit;font-size:13px;font-weight:700;line-height:1.15;text-align:left;cursor:pointer}
 .block-toggle svg{width:16px;height:16px;flex:none}
 .block-toggle[aria-pressed="true"]{background:var(--blocked);border-color:transparent;color:#fff}
@@ -163,8 +173,7 @@ form{display:flex;flex-direction:column;gap:14px}
 .casa-opt input:checked + span{border-color:var(--ink);background:var(--surface)}
 .casa-opt input:focus-visible + span{outline:2px solid var(--accent);outline-offset:2px}
 .nights{font-size:13.5px;color:var(--muted);margin-top:-4px}
-.payment-summary{display:flex;flex-direction:column;justify-content:center;gap:2px;min-height:46px;padding:6px 10px;border-radius:11px;font-size:13px}
-.payment-summary small{font-size:11px}
+.payment-summary{display:flex;flex-direction:column;justify-content:center;height:46px;padding:0 10px;border-radius:11px;font-size:13px;line-height:1.15;overflow:hidden}
 .payment-badge{padding:4px 8px;border-radius:8px;font-size:12px;white-space:nowrap}
 .err{background:color-mix(in srgb, var(--danger) 12%, transparent);color:var(--danger);border-radius:10px;padding:10px 12px;font-size:14px}
 .notice{background:color-mix(in srgb, var(--accent) 14%, transparent);color:var(--ink);border:1px solid color-mix(in srgb, var(--accent) 40%, transparent);border-radius:10px;padding:10px 12px;font-size:14px}

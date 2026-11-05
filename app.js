@@ -76,6 +76,20 @@
   const saldoPendiente = r => r.total == null ? null : Math.max(0, Number(r.total) - (Number(r.senia) || 0));
   // Fechas bloqueadas (casa no disponible, sin huésped): barra gris, no cuentan en los totales
   const textoBloqueo = r => (r.comentarios || "").split("\n")[0].trim() || "Bloqueado";
+
+  /* ---------- huéspedes que ya reservaron ---------- */
+  // Compara sin mayúsculas, tildes ni espacios de más; el teléfono, solo por sus dígitos
+  const normTexto = s => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").trim().toLowerCase().replace(/\s+/g, " ");
+  const normTel = t => normalizarTelefonoGuardado(t).replace(/\D/g, "");
+  const fmtConAnio = s => utc(s).toLocaleDateString("es-UY", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }).replace(".", "");
+  // Reservas (no bloqueos) con el mismo nombre, apellido y teléfono, ordenadas por fecha
+  function reservasPrevias(nombre, apellido, telefono) {
+    const n = normTexto(nombre), a = normTexto(apellido), t = normTel(telefono);
+    if (!n || t.length < 6) return [];
+    return reservas
+      .filter(r => !r.bloqueada && normTexto(r.nombre) === n && normTexto(r.apellido) === a && normTel(r.telefono) === t)
+      .sort((x, z) => x.inicio.localeCompare(z.inicio));
+  }
   const calcularResumenPeriodo = (inicio, fin, lista) => {
     const desde = dn(inicio), hasta = dn(fin) + 1;
     const resumen = {
@@ -332,6 +346,7 @@
           <div class="fld"><label for="codigoPais">País</label><select id="codigoPais">${CODIGOS_PAIS.map(p => `<option value="${p.codigo}" ${telefonoParts.codigo === p.codigo ? "selected" : ""}>${p.pais} ${p.codigo}</option>`).join("")}</select></div>
           <div class="fld"><label for="telefono">Número *</label><input id="telefono" type="tel" inputmode="tel" placeholder="99 123 456" value="${esc(telefonoParts.numero)}" required></div>
         </div>
+        <div class="notice solo-reserva" id="guestInfo" role="status" hidden></div>
         <div class="three solo-reserva">
           <div class="fld"><label for="moneda">Moneda</label><select id="moneda"><option value="USD" ${r.moneda === "USD" ? "selected" : ""}>US$</option><option value="UYU" ${r.moneda === "UYU" ? "selected" : ""}>$U</option></select></div>
           <div class="fld"><label for="precio">Por noche</label><input id="precio" type="number" inputmode="decimal" min="0" step="any" class="num" value="${r.precioNoche == null ? "" : esc(r.precioNoche)}"></div>
@@ -386,6 +401,17 @@
     f("total").addEventListener("input", () => { importeFuente = "total"; recalc(); });
     f("senia").addEventListener("input", actualizarPago);
     recalc();
+
+    // Reserva nueva: avisar si la persona ya reservó antes (mismo nombre, apellido y teléfono)
+    const revisarHuesped = () => {
+      const previas = reservasPrevias(f("nombre").value, f("apellido").value, telefonoInternacional(f("codigoPais").value, f("telefono").value));
+      f("guestInfo").hidden = !previas.length;
+      if (!previas.length) return;
+      const quien = esc(huespedDe(previas[previas.length - 1])); // como quedó escrito en su última reserva
+      f("guestInfo").innerHTML = `<b>${quien}</b> ya reservó ${previas.length === 1 ? "1 vez" : `${previas.length} veces`}:<ul>${previas.map(p =>
+        `<li>${nombreCasa(p.casa)} · ${fmtConAnio(p.inicio)} → ${fmtConAnio(p.fin)} (${noches(p)} ${noches(p) === 1 ? "noche" : "noches"})${p.inicio > todayISO ? " · próxima" : ""}</li>`).join("")}</ul>`;
+    };
+    if (!editing) ["nombre", "apellido", "telefono", "codigoPais"].forEach(id => f(id).addEventListener("input", revisarHuesped));
 
     // Bloqueo de fechas: oculta los datos de huésped y pago
     let bloqueada = !!r.bloqueada;
